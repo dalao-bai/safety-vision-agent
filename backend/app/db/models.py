@@ -149,3 +149,62 @@ class RemediationEvidence(Base):
     image_path: Mapped[str] = mapped_column(Text)
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AnnotationBatch(Base):
+    __tablename__ = "annotation_batches"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("annbatch"))
+    source: Mapped[str] = mapped_column(String(64), default="analysis_review")
+    status: Mapped[str] = mapped_column(String(32), default="open")
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AnnotationSample(Base):
+    __tablename__ = "annotation_samples"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("annsample"))
+    batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    analysis_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_path: Mapped[str] = mapped_column(Text)
+    width: Mapped[int | None] = mapped_column(nullable=True)
+    height: Mapped[int | None] = mapped_column(nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending_review")
+    source_type: Mapped[str] = mapped_column(String(64), default="analysis_review")
+    model_output_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    yolo_output_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    fused_result_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    draft_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    review_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    accepted_record_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AnnotationObjectDraft(Base):
+    __tablename__ = "annotation_object_drafts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("annobj"))
+    sample_id: Mapped[str] = mapped_column(String(64), index=True)
+    draft_object_index: Mapped[int] = mapped_column(default=0)
+    object_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    decision: Mapped[str] = mapped_column(String(32), default="pending")
+    revised_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class TrainingCandidate(Base):
+    __tablename__ = "training_candidates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("traincand"))
+    sample_id: Mapped[str] = mapped_column(String(64), index=True)
+    analysis_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    candidate_type: Mapped[str] = mapped_column(String(64), default="sft")
+    status: Mapped[str] = mapped_column(String(32), default="ready")
+    source_reason: Mapped[str] = mapped_column(String(128), default="human_revised_model_output")
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

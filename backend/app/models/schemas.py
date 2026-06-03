@@ -156,3 +156,51 @@ class ReportRequest(BaseModel):
 class ReportResponse(BaseModel):
     title: str
     markdown: str
+
+
+class AnnotationObjectReview(BaseModel):
+    draft_object_index: int
+    decision: str = "pending"
+    revised: dict = Field(default_factory=dict)
+    note: str = ""
+
+
+class AnnotationFromAnalysisRequest(BaseModel):
+    analysis_id: str
+    reviewer: str | None = None
+    reason: str = "model_output_needs_revision"
+    note: str = ""
+
+
+class AnnotationSampleResponse(BaseModel):
+    sample_id: str
+    batch_id: str | None = None
+    analysis_id: str | None = None
+    image_path: str
+    status: str
+    draft_json: dict = Field(default_factory=dict)
+    review_json: dict = Field(default_factory=dict)
+    accepted_record_json: dict = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class AnnotationReviewUpdateRequest(BaseModel):
+    reviewer: str | None = None
+    image_decision: str = "accept"
+    review_status: str = "reviewed"
+    objects: list[AnnotationObjectReview] = Field(default_factory=list)
+    note: str = ""
+
+
+class AnnotationCommitRequest(BaseModel):
+    candidate_type: str = "sft"
+    append_to_db: bool = False
+
+
+class AnnotationCommitResponse(BaseModel):
+    sample_id: str
+    status: str
+    accepted_images: int
+    accepted_objects: int
+    training_candidate_id: str | None = None
+    accepted_record_json: dict = Field(default_factory=dict)

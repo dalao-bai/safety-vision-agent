@@ -12,8 +12,14 @@ type ChatMessage = {
 type Hazard = {
   object_id?: string;
   object_name: string;
+  bbox?: number[];
+  status?: string;
+  hazard_type_id?: string | null;
   hazard_type?: string;
   visual_evidence: string;
+  missing_evidence?: string | null;
+  evidence_sufficiency?: string;
+  uncertainty_reason?: string | null;
   rule: string;
 };
 
@@ -49,6 +55,27 @@ type TaskStatus = {
   error?: string;
 };
 
+type AnnotationObjectReview = {
+  draft_object_index: number;
+  decision: string;
+  revised: Record<string, unknown>;
+  note: string;
+};
+
+type AnnotationSample = {
+  sample_id: string;
+  analysis_id?: string;
+  image_path: string;
+  status: string;
+  draft_json: {
+    objects?: Array<Record<string, unknown> & { draft_object_index?: number; object_name?: string; status?: string }>;
+  };
+  review_json: {
+    objects?: AnnotationObjectReview[];
+  };
+  accepted_record_json?: Record<string, unknown>;
+};
+
 async function requireOk(response: Response, fallback: string) {
   if (response.ok) return;
   let detail = fallback;
@@ -73,6 +100,8 @@ export default function Home() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
+  const [annotationSample, setAnnotationSample] = useState<AnnotationSample | null>(null);
+  const [reviewObjects, setReviewObjects] = useState<AnnotationObjectReview[]>([]);
   const [isBusy, setIsBusy] = useState(false);
 
   async function uploadImage(file: File) {
@@ -98,6 +127,9 @@ export default function Home() {
         setAnalysisId(payload.result.analysis_id);
       }
       if (payload.status === "success" || payload.status === "failure" || payload.status === "failed") {
+        if (payload.status === "failure" || payload.status === "failed") {
+          throw new Error(payload.error || "分析任务失败");
+        }
         return payload;
       }
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -166,6 +198,98 @@ export default function Home() {
         { role: "assistant", content: error instanceof Error ? error.message : "人工复核失败" }
       ]);
     }
+  }
+
+  async function createAnnotationSample() {
+    if (!analysisId) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/annotations/from-analysis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysis_id: analysisId,
+          reason: "model_output_needs_revision",
+          note: "前端标记需修正，进入标注反哺闭环。"
+        })
+      });
+      await requireOk(response, "创建标注复核样本失败");
+      const payload: AnnotationSample = await response.json();
+      setAnnotationSample(payload);
+      setReviewObjects(payload.review_json.objects || []);
+      setMessages((items) => [...items, { role: "assistant", content: `已创建标注复核样本：${payload.sample_id}` }]);
+    } catch (error) {
+      setMessages((items) => [
+        ...items,
+        { role: "assistant", content: error instanceof Error ? error.message : "标注样本创建失败" }
+      ]);
+    }
+  }
+
+  async function saveAnnotationReview() {
+    if (!annotationSample) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/annotations/samples/${annotationSample.sample_id}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_decision: "accept",
+          review_status: "reviewed",
+          objects: reviewObjects,
+          note: "前端人工复核保存。"
+        })
+      });
+      await requireOk(response, "保存标注复核失败");
+      const payload: AnnotationSample = await response.json();
+      setAnnotationSample(payload);
+      setReviewObjects(payload.review_json.objects || []);
+      setMessages((items) => [...items, { role: "assistant", content: "标注复核已保存。" }]);
+    } catch (error) {
+      setMessages((items) => [
+        ...items,
+        { role: "assistant", content: error instanceof Error ? error.message : "标注复核保存失败" }
+      ]);
+    }
+  }
+
+  async function commitAnnotationSample() {
+    if (!annotationSample) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/annotations/samples/${annotationSample.sample_id}/commit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidate_type: "sft", append_to_db: false })
+      });
+      await requireOk(response, "生成训练候选失败");
+      const payload = await response.json();
+      setMessages((items) => [
+        ...items,
+        { role: "assistant", content: `已生成训练候选：${payload.accepted_objects} 条对象记录。` }
+      ]);
+    } catch (error) {
+      setMessages((items) => [
+        ...items,
+        { role: "assistant", content: error instanceof Error ? error.message : "生成训练候选失败" }
+      ]);
+    }
+  }
+
+  function updateReviewDecision(index: number, decision: string) {
+    setReviewObjects((items) =>
+      items.map((item, itemIndex) => (itemIndex === index ? { ...item, decision } : item))
+    );
+  }
+
+  function updateReviewJson(index: number, value: string) {
+    setReviewObjects((items) =>
+      items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        try {
+          return { ...item, revised: JSON.parse(value) };
+        } catch {
+          return item;
+        }
+      })
+    );
   }
 
   async function createRemediation(index: number, hazard: Hazard) {
@@ -281,6 +405,37 @@ export default function Home() {
           ) : (
             <div className="emptyState">暂无 YOLO 检测结果。</div>
           )}
+
+          <h3>标注反哺</h3>
+          <div className="resultCard">
+            <p>将需修正的模型输出转成标注复核样本，人工确认后生成训练候选数据。</p>
+            <div className="actions">
+              <button type="button" disabled={!analysisId} onClick={() => void createAnnotationSample()}>进入标注复核</button>
+              <button type="button" disabled={!annotationSample} onClick={() => void saveAnnotationReview()}>保存复核</button>
+              <button type="button" disabled={!annotationSample} onClick={() => void commitAnnotationSample()}>生成训练样本</button>
+            </div>
+            {annotationSample ? (
+              <small>样本：{annotationSample.sample_id}，状态：{annotationSample.status}</small>
+            ) : null}
+          </div>
+
+          {reviewObjects.length ? (
+            reviewObjects.map((item, index) => (
+              <div className="resultCard annotationCard" key={`annotation-${item.draft_object_index}`}>
+                <strong>复核对象 {item.draft_object_index}</strong>
+                <select value={item.decision} onChange={(event) => updateReviewDecision(index, event.target.value)}>
+                  <option value="pending">待定</option>
+                  <option value="accept">通过</option>
+                  <option value="revise">修正</option>
+                  <option value="reject">驳回</option>
+                </select>
+                <textarea
+                  value={JSON.stringify(item.revised, null, 2)}
+                  onChange={(event) => updateReviewJson(index, event.target.value)}
+                />
+              </div>
+            ))
+          ) : null}
         </aside>
       </section>
     </main>

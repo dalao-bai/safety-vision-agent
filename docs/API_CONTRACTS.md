@@ -231,6 +231,131 @@ GET /api/analysis/{analysis_id}
 POST /api/reviews
 ```
 
+### 从分析结果创建标注复核样本
+
+```text
+POST /api/annotations/from-analysis
+```
+
+请求：
+
+```json
+{
+  "analysis_id": "analysis_xxx",
+  "reviewer": null,
+  "reason": "model_output_needs_revision",
+  "note": "前端标记需修正，进入标注反哺闭环。"
+}
+```
+
+响应：
+
+```json
+{
+  "sample_id": "annsample_xxx",
+  "batch_id": "annbatch_xxx",
+  "analysis_id": "analysis_xxx",
+  "image_path": "uploads/example.jpg",
+  "status": "pending_review",
+  "draft_json": {},
+  "review_json": {},
+  "accepted_record_json": {},
+  "created_at": "2026-06-03T00:00:00"
+}
+```
+
+### 查询标注样本
+
+```text
+GET /api/annotations/samples/{sample_id}
+```
+
+### 保存标注复核
+
+```text
+PATCH /api/annotations/samples/{sample_id}/review
+```
+
+请求：
+
+```json
+{
+  "reviewer": null,
+  "image_decision": "accept",
+  "review_status": "reviewed",
+  "objects": [
+    {
+      "draft_object_index": 1,
+      "decision": "revise",
+      "revised": {
+        "object_id": "floor_edge_protection",
+        "object_name": "楼层临边防护",
+        "bbox": [120, 80, 780, 620],
+        "status": "confirmed_hazard",
+        "hazard_type_id": "missing_protection",
+        "hazard_type": "防护缺失",
+        "visual_evidence": "人工修正后的可见证据。",
+        "missing_evidence": null,
+        "evidence_sufficiency": "sufficient",
+        "uncertainty_reason": null,
+        "rule": "楼层临边应设置防护栏杆或其他防坠落措施。"
+      },
+      "note": "修正 bbox 和证据描述。"
+    }
+  ],
+  "note": "人工复核完成。"
+}
+```
+
+`decision` 只能取：
+
+```text
+pending
+accept
+revise
+reject
+```
+
+### 生成训练候选
+
+```text
+POST /api/annotations/samples/{sample_id}/commit
+```
+
+请求：
+
+```json
+{
+  "candidate_type": "sft",
+  "append_to_db": false
+}
+```
+
+响应：
+
+```json
+{
+  "sample_id": "annsample_xxx",
+  "status": "committed",
+  "accepted_images": 1,
+  "accepted_objects": 1,
+  "training_candidate_id": "traincand_xxx",
+  "accepted_record_json": {
+    "images": [],
+    "objects": [],
+    "errors": []
+  }
+}
+```
+
+后端会同时写出：
+
+```text
+outputs/annotation_feedback/{sample_id}/accepted_records.json
+outputs/annotation_feedback/{sample_id}/images.jsonl
+outputs/annotation_feedback/{sample_id}/objects.jsonl
+```
+
 ### 创建整改任务
 
 ```text

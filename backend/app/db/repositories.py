@@ -4,6 +4,9 @@ from time import perf_counter
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    AnnotationBatch,
+    AnnotationObjectDraft,
+    AnnotationSample,
     AnalysisTask,
     Conversation,
     FusedResultRecord,
@@ -11,6 +14,7 @@ from app.db.models import (
     Message,
     RemediationEvidence,
     RemediationTask,
+    TrainingCandidate,
     ToolCall,
     UploadedFile,
     VLMResult,
@@ -231,3 +235,117 @@ def update_remediation_status(db: Session, task_id: str, status: str) -> Remedia
     db.commit()
     db.refresh(task)
     return task
+
+
+def latest_vlm_result(db: Session, analysis_id: str) -> VLMResult | None:
+    return (
+        db.query(VLMResult)
+        .filter(VLMResult.analysis_id == analysis_id)
+        .order_by(VLMResult.created_at.desc())
+        .first()
+    )
+
+
+def latest_yolo_result(db: Session, analysis_id: str) -> YOLOResult | None:
+    return (
+        db.query(YOLOResult)
+        .filter(YOLOResult.analysis_id == analysis_id)
+        .order_by(YOLOResult.created_at.desc())
+        .first()
+    )
+
+
+def create_annotation_batch(db: Session, source: str, note: str = "") -> AnnotationBatch:
+    batch = AnnotationBatch(source=source, status="open", note=note)
+    db.add(batch)
+    db.commit()
+    db.refresh(batch)
+    return batch
+
+
+def create_annotation_sample(
+    db: Session,
+    batch_id: str | None,
+    analysis_id: str | None,
+    conversation_id: str | None,
+    image_path: str,
+    source_type: str,
+    model_output_json: dict,
+    yolo_output_json: dict,
+    fused_result_json: dict,
+    draft_json: dict,
+    review_json: dict,
+    note: str,
+) -> AnnotationSample:
+    sample = AnnotationSample(
+        batch_id=batch_id,
+        analysis_id=analysis_id,
+        conversation_id=conversation_id,
+        image_path=image_path,
+        status="pending_review",
+        source_type=source_type,
+        model_output_json=model_output_json,
+        yolo_output_json=yolo_output_json,
+        fused_result_json=fused_result_json,
+        draft_json=draft_json,
+        review_json=review_json,
+        note=note,
+    )
+    db.add(sample)
+    db.commit()
+    db.refresh(sample)
+    for obj in draft_json.get("objects") or []:
+        db.add(
+            AnnotationObjectDraft(
+                sample_id=sample.id,
+                draft_object_index=int(obj.get("draft_object_index", 0)),
+                object_json=obj,
+                decision="pending",
+                revised_json=obj,
+            )
+        )
+    db.commit()
+    return sample
+
+
+def update_annotation_review(db: Session, sample: AnnotationSample, review_json: dict) -> AnnotationSample:
+    sample.review_json = review_json
+    sample.status = "reviewed"
+    sample.updated_at = datetime.utcnow()
+    for item in review_json.get("objects") or []:
+        draft = (
+            db.query(AnnotationObjectDraft)
+            .filter(
+                AnnotationObjectDraft.sample_id == sample.id,
+                AnnotationObjectDraft.draft_object_index == item.get("draft_object_index"),
+            )
+            .first()
+        )
+        if draft:
+            draft.decision = item.get("decision", "pending")
+            draft.revised_json = item.get("revised") or {}
+    db.commit()
+    db.refresh(sample)
+    return sample
+
+
+def commit_annotation_sample(db: Session, sample: AnnotationSample, accepted_record_json: dict, candidate_type: str) -> TrainingCandidate | None:
+    sample.accepted_record_json = accepted_record_json
+    accepted_count = len(accepted_record_json.get("objects") or [])
+    sample.status = "committed" if accepted_count else "reviewed"
+    sample.updated_at = datetime.utcnow()
+    candidate = None
+    if accepted_count:
+        candidate = TrainingCandidate(
+            sample_id=sample.id,
+            analysis_id=sample.analysis_id,
+            candidate_type=candidate_type,
+            status="ready",
+            payload_json=accepted_record_json,
+        )
+        db.add(candidate)
+    db.commit()
+    if candidate:
+        db.refresh(candidate)
+    db.refresh(sample)
+    return candidate

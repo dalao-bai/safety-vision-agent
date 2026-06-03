@@ -162,6 +162,38 @@ body {
   background: #2f6f5e;
 }
 
+.actions button:disabled {
+  background: #9daab8;
+  cursor: not-allowed;
+}
+
+.annotationCard {
+  display: grid;
+  gap: 10px;
+}
+
+.annotationCard select {
+  height: 34px;
+  border: 1px solid #c8d3e3;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+}
+
+.annotationCard textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  border: 1px solid #c8d3e3;
+  border-radius: 6px;
+  padding: 10px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #172033;
+  background: #f8fafc;
+}
+
 @media (max-width: 1080px) {
   .workspace {
     grid-template-columns: 1fr;

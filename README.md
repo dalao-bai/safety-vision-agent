@@ -13,16 +13,21 @@
 - 融合 VLM、YOLO、规则和历史上下文。
 - 输出结构化 JSON、带框图片和检查报告。
 - 保存会话、图片、工具调用日志和分析结果。
+- 支持人工复核后的标注反哺闭环，将需修正结果生成训练候选数据。
+- 内置四口五临边 API 辅助标注流水线代码，支持后续批量草标和审核台扩展。
 
 ## 当前边界
 
 本仓库第一版不做 VLM 后台实时视频逐帧巡检。VLM 和 YOLO 都作为外部 API 工具按需调用。Agent 项目不保存模型权重。
+
+标注流水线只用于人工复核、数据沉淀和后续训练数据构造，不会阻塞正常隐患推理流程。
 
 ## 推荐目录
 
 ```text
 safety-vision-agent/
 ├── backend/          FastAPI 后端和 Agent 工具
+│   └── app/annotation_pipeline/  四口五临边数据标注流水线副本
 ├── frontend/         Next.js 前端原型
 ├── configs/          配置模板和规则示例
 ├── docs/             规划、架构、API 契约和路线图
@@ -64,6 +69,28 @@ VLM_API_KEY=
 YOLO_API_BASE_URL=
 YOLO_API_KEY=
 RULE_BLOCKS_PATH=
+```
+
+## 标注反哺闭环
+
+当前支持从一次分析结果进入标注复核：
+
+```text
+分析结果
+-> 前端点击“进入标注复核”
+-> 后端创建 annotation sample
+-> 人工 accept / revise / reject
+-> 生成 accepted_records
+-> 写入 training_candidates
+```
+
+生成的训练候选记录会保存到数据库，同时在后端运行目录写入：
+
+```text
+outputs/annotation_feedback/{sample_id}/
+  accepted_records.json
+  images.jsonl
+  objects.jsonl
 ```
 
 ## GitHub 提交建议
