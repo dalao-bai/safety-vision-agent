@@ -16,7 +16,7 @@ body {
 
 .workspace {
   display: grid;
-  grid-template-columns: 300px minmax(420px, 1fr) 340px;
+  grid-template-columns: 300px minmax(420px, 1fr) 360px;
   gap: 16px;
   min-height: calc(100vh - 48px);
 }
@@ -109,7 +109,8 @@ body {
   font-size: 14px;
 }
 
-.composer button {
+.composer button,
+.actions button {
   border: 0;
   border-radius: 6px;
   background: #1f6feb;
@@ -145,6 +146,20 @@ body {
 
 .resultCard small {
   color: #5f6f89;
+  display: block;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  background: #2f6f5e;
 }
 
 @media (max-width: 1080px) {

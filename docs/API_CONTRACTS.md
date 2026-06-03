@@ -1,8 +1,8 @@
 # API 契约草案
 
-## 微调 VLM API
-
 真实地址和密钥由 `.env` 配置，本仓库不提交真实值。
+
+## 微调 VLM API
 
 ### 请求
 
@@ -50,16 +50,75 @@
 POST /api/files/images
 ```
 
-### 多轮对话
+### 创建分析任务
 
 ```text
-POST /api/chat
+POST /api/analysis
 ```
 
-### 查询会话
+### 查询任务状态
 
 ```text
-GET /api/conversations/{conversation_id}
+GET /api/analysis/tasks/{task_id}
+```
+
+### 查询分析结果
+
+```text
+GET /api/analysis/{analysis_id}
+```
+
+### 人工复核
+
+```text
+POST /api/reviews
+```
+
+请求：
+
+```json
+{
+  "analysis_id": "analysis_xxx",
+  "item_type": "hazard",
+  "item_index": 0,
+  "decision": "accept",
+  "reviewer": "human",
+  "revised_json": {},
+  "note": "确认该隐患判断。"
+}
+```
+
+### 创建整改任务
+
+```text
+POST /api/remediations
+```
+
+请求：
+
+```json
+{
+  "conversation_id": "conv_xxx",
+  "analysis_id": "analysis_xxx",
+  "hazard_index": 0,
+  "title": "整改任务 1：楼层临边防护",
+  "recommendation": "请设置连续可靠的防护栏杆。",
+  "responsible_person": null,
+  "due_at": null,
+  "hazard_json": {}
+}
+```
+
+### 上传整改证据
+
+```text
+POST /api/remediations/{task_id}/evidence
+```
+
+### 复核整改结果
+
+```text
+POST /api/remediations/{task_id}/verify
 ```
 
 ### 生成报告

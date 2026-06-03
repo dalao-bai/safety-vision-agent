@@ -6,7 +6,10 @@ from app.db.models import (
     AnalysisTask,
     Conversation,
     FusedResultRecord,
+    HumanReview,
     Message,
+    RemediationEvidence,
+    RemediationTask,
     UploadedFile,
     VLMResult,
     YOLOResult,
@@ -88,3 +91,79 @@ def save_analysis_results(db: Session, analysis_id: str, vlm_json: dict, yolo_js
     db.add(FusedResultRecord(analysis_id=analysis_id, result_json=fused_json))
     update_analysis_status(db, analysis_id, "completed")
     db.commit()
+
+
+def create_human_review(
+    db: Session,
+    analysis_id: str,
+    item_type: str,
+    item_index: int,
+    decision: str,
+    reviewer: str | None,
+    revised_json: dict,
+    note: str,
+) -> HumanReview:
+    review = HumanReview(
+        analysis_id=analysis_id,
+        item_type=item_type,
+        item_index=item_index,
+        decision=decision,
+        reviewer=reviewer,
+        revised_json=revised_json,
+        note=note,
+    )
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+    return review
+
+
+def create_remediation_task(
+    db: Session,
+    conversation_id: str | None,
+    analysis_id: str,
+    hazard_index: int,
+    title: str,
+    recommendation: str,
+    responsible_person: str | None,
+    due_at,
+    hazard_json: dict,
+) -> RemediationTask:
+    task = RemediationTask(
+        conversation_id=conversation_id,
+        analysis_id=analysis_id,
+        hazard_index=hazard_index,
+        title=title,
+        recommendation=recommendation,
+        responsible_person=responsible_person,
+        due_at=due_at,
+        hazard_json=hazard_json,
+        status="open",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def add_remediation_evidence(db: Session, task_id: str, image_path: str, note: str) -> RemediationEvidence:
+    evidence = RemediationEvidence(remediation_task_id=task_id, image_path=image_path, note=note)
+    task = db.get(RemediationTask, task_id)
+    if task:
+        task.status = "submitted"
+        task.updated_at = datetime.utcnow()
+    db.add(evidence)
+    db.commit()
+    db.refresh(evidence)
+    return evidence
+
+
+def update_remediation_status(db: Session, task_id: str, status: str) -> RemediationTask | None:
+    task = db.get(RemediationTask, task_id)
+    if not task:
+        return None
+    task.status = status
+    task.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(task)
+    return task

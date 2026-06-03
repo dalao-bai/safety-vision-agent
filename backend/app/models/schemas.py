@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 
@@ -26,6 +27,15 @@ class HazardObject(BaseModel):
     confidence: float | None = None
 
 
+class UncertaintyFollowUp(BaseModel):
+    object_name: str
+    bbox: BBox | None = None
+    uncertainty_reason: str
+    missing_evidence: str
+    follow_up_question: str
+    capture_suggestion: str
+
+
 class VLMAnalysisResult(BaseModel):
     objects: list[HazardObject] = Field(default_factory=list)
     summary: str = ""
@@ -46,6 +56,7 @@ class FusedResult(BaseModel):
     hazards: list[HazardObject] = Field(default_factory=list)
     detections: list[Detection] = Field(default_factory=list)
     uncertain_items: list[HazardObject] = Field(default_factory=list)
+    uncertain_followups: list[UncertaintyFollowUp] = Field(default_factory=list)
     summary: str = ""
     recommendations: list[str] = Field(default_factory=list)
 
@@ -88,6 +99,52 @@ class AnalysisResultResponse(BaseModel):
     analysis_id: str
     status: str
     result: FusedResult | None = None
+
+
+class ReviewCreateRequest(BaseModel):
+    analysis_id: str
+    item_type: str = "hazard"
+    item_index: int
+    decision: str
+    reviewer: str | None = None
+    revised_json: dict = Field(default_factory=dict)
+    note: str = ""
+
+
+class ReviewResponse(BaseModel):
+    review_id: str
+    analysis_id: str
+    decision: str
+    note: str = ""
+
+
+class RemediationCreateRequest(BaseModel):
+    conversation_id: str | None = None
+    analysis_id: str
+    hazard_index: int
+    title: str
+    recommendation: str
+    responsible_person: str | None = None
+    due_at: datetime | None = None
+    hazard_json: dict = Field(default_factory=dict)
+
+
+class RemediationResponse(BaseModel):
+    task_id: str
+    analysis_id: str
+    status: str
+    title: str
+    recommendation: str
+
+
+class RemediationEvidenceRequest(BaseModel):
+    image_path: str
+    note: str = ""
+
+
+class RemediationVerifyRequest(BaseModel):
+    decision: str
+    note: str = ""
 
 
 class ReportRequest(BaseModel):

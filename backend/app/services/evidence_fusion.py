@@ -1,10 +1,12 @@
 from app.models.schemas import FusedResult, VLMAnalysisResult, YOLODetectionResult
+from app.services.uncertainty_resolver import UncertaintyResolver
 
 
 class EvidenceFusionService:
     def fuse(self, vlm_result: VLMAnalysisResult, yolo_result: YOLODetectionResult) -> FusedResult:
         hazards = [item for item in vlm_result.objects if item.status == "confirmed_hazard"]
         uncertain_items = [item for item in vlm_result.objects if item.status == "uncertain"]
+        uncertain_followups = UncertaintyResolver().build_followups(uncertain_items)
 
         recommendations: list[str] = []
         if hazards:
@@ -28,6 +30,7 @@ class EvidenceFusionService:
             hazards=hazards,
             detections=yolo_result.detections,
             uncertain_items=uncertain_items,
+            uncertain_followups=uncertain_followups,
             summary=summary,
             recommendations=recommendations,
         )

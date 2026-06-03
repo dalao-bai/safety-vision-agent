@@ -9,6 +9,22 @@ type ChatMessage = {
   content: string;
 };
 
+type Hazard = {
+  object_id?: string;
+  object_name: string;
+  hazard_type?: string;
+  visual_evidence: string;
+  rule: string;
+};
+
+type FollowUp = {
+  object_name: string;
+  uncertainty_reason: string;
+  missing_evidence: string;
+  follow_up_question: string;
+  capture_suggestion: string;
+};
+
 type AnalysisResponse = {
   analysis_id: string;
   conversation_id: string;
@@ -20,9 +36,11 @@ type TaskStatus = {
   task_id: string;
   status: string;
   result?: {
+    analysis_id?: string;
     summary?: string;
     fused_result?: {
-      hazards?: Array<{ object_name: string; hazard_type?: string; visual_evidence: string; rule: string }>;
+      hazards?: Hazard[];
+      uncertain_followups?: FollowUp[];
       detections?: Array<{ label: string; confidence: number; bbox: number[] }>;
       recommendations?: string[];
       summary?: string;
@@ -41,6 +59,7 @@ export default function Home() {
   const [question, setQuestion] = useState("分析这张图有没有四口五临边隐患，并检查是否有人未佩戴安全帽。");
   const [imagePath, setImagePath] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -64,6 +83,9 @@ export default function Home() {
       const response = await fetch(`${API_BASE}/api/analysis/tasks/${taskId}`);
       const payload: TaskStatus = await response.json();
       setTaskStatus(payload);
+      if (payload.result?.analysis_id) {
+        setAnalysisId(payload.result.analysis_id);
+      }
       if (payload.status === "success" || payload.status === "failure" || payload.status === "failed") {
         return payload;
       }
@@ -97,6 +119,7 @@ export default function Home() {
       }
       const analysis: AnalysisResponse = await response.json();
       setConversationId(analysis.conversation_id);
+      setAnalysisId(analysis.analysis_id);
       setTaskStatus({ task_id: analysis.task_id, status: analysis.status });
 
       const finished = await pollTask(analysis.task_id);
@@ -110,6 +133,43 @@ export default function Home() {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  async function createReview(index: number, decision: string) {
+    if (!analysisId) return;
+    await fetch(`${API_BASE}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        analysis_id: analysisId,
+        item_type: "hazard",
+        item_index: index,
+        decision,
+        note: decision === "accept" ? "前端确认隐患判断。" : "前端标记需要复核。"
+      })
+    });
+    setMessages((items) => [...items, { role: "assistant", content: `已记录人工复核：${decision}` }]);
+  }
+
+  async function createRemediation(index: number, hazard: Hazard) {
+    if (!analysisId) return;
+    const title = `整改任务 ${index + 1}：${hazard.object_name}`;
+    const recommendation = hazard.rule
+      ? `请按规则依据落实整改：${hazard.rule}`
+      : "请现场复核并补齐对应防护措施。";
+    await fetch(`${API_BASE}/api/remediations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        analysis_id: analysisId,
+        hazard_index: index,
+        title,
+        recommendation,
+        hazard_json: hazard
+      })
+    });
+    setMessages((items) => [...items, { role: "assistant", content: `已创建整改任务：${title}` }]);
   }
 
   const fused = taskStatus?.result?.fused_result;
@@ -161,10 +221,28 @@ export default function Home() {
                 <p>{item.hazard_type || "隐患"}</p>
                 <p>{item.visual_evidence}</p>
                 <small>{item.rule}</small>
+                <div className="actions">
+                  <button type="button" onClick={() => void createReview(index, "accept")}>确认</button>
+                  <button type="button" onClick={() => void createReview(index, "revise")}>需修正</button>
+                  <button type="button" onClick={() => void createRemediation(index, item)}>生成整改</button>
+                </div>
               </div>
             ))
           ) : (
             <div className="emptyState">暂无明确隐患结果。</div>
+          )}
+
+          <h3>证据不足追问</h3>
+          {fused?.uncertain_followups?.length ? (
+            fused.uncertain_followups.map((item, index) => (
+              <div className="resultCard" key={`${item.object_name}-${index}`}>
+                <strong>{item.object_name}</strong>
+                <p>{item.follow_up_question}</p>
+                <small>{item.capture_suggestion}</small>
+              </div>
+            ))
+          ) : (
+            <div className="emptyState">暂无证据不足追问。</div>
           )}
 
           <h3>检测结果</h3>

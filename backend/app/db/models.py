@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -115,8 +115,37 @@ class HumanReview(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("review"))
     analysis_id: Mapped[str] = mapped_column(String(64), index=True)
+    item_type: Mapped[str] = mapped_column(String(32), default="hazard")
+    item_index: Mapped[int] = mapped_column(default=0)
     reviewer: Mapped[str | None] = mapped_column(String(128), nullable=True)
     decision: Mapped[str] = mapped_column(String(32), default="pending")
     revised_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RemediationTask(Base):
+    __tablename__ = "remediation_tasks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("remed"))
+    conversation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    analysis_id: Mapped[str] = mapped_column(String(64), index=True)
+    hazard_index: Mapped[int] = mapped_column(default=0)
+    title: Mapped[str] = mapped_column(String(255))
+    recommendation: Mapped[str] = mapped_column(Text)
+    responsible_person: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="open")
+    hazard_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RemediationEvidence(Base):
+    __tablename__ = "remediation_evidence"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("evid"))
+    remediation_task_id: Mapped[str] = mapped_column(String(64), index=True)
+    image_path: Mapped[str] = mapped_column(Text)
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
