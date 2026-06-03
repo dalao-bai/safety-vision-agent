@@ -2,7 +2,7 @@ import asyncio
 
 from app.db.repositories import save_analysis_results, timed_tool_call, update_analysis_status
 from app.db.session import SessionLocal
-from app.models.schemas import VLMAnalysisResult, YOLODetectionResult
+from app.models.schemas import FusedResult, VLMAnalysisResult, YOLODetectionResult
 from app.services.evidence_fusion import EvidenceFusionService
 from app.services.rule_retriever import RuleRetriever
 from app.services.vlm_client import VLMClient
@@ -67,7 +67,7 @@ def analyze_image_task(
             input_json={"vlm_object_count": len(vlm_result.objects), "yolo_detection_count": len(yolo_result.detections)},
             fn=lambda: EvidenceFusionService().fuse(vlm_result, yolo_result).model_dump(),
         )
-        fused_result = EvidenceFusionService().fuse(vlm_result, yolo_result)
+        fused_result = FusedResult.model_validate(fused)
         save_analysis_results(
             db=db,
             analysis_id=analysis_id,
