@@ -1,0 +1,59 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+api_config.json
+*secret*
+*key*
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+backend/.venv/
+
+# Node
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+uploads/
+outputs/
+data/
+datasets/
+reports/generated/
+*.sqlite
+*.sqlite3
+*.db
+dump.rdb
+
+# Model weights and large artifacts
+*.pt
+*.pth
+*.onnx
+*.engine
+*.safetensors
+*.bin
+*.gguf
+
+# Media
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

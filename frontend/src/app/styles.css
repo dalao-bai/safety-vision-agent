@@ -1,0 +1,154 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f5f7fb;
+  color: #172033;
+  font-family: Arial, "Microsoft YaHei", sans-serif;
+}
+
+.shell {
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 300px minmax(420px, 1fr) 340px;
+  gap: 16px;
+  min-height: calc(100vh - 48px);
+}
+
+.sidebar,
+.chatPanel,
+.resultPanel {
+  background: #ffffff;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.sidebar h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.sidebar p {
+  margin: 0 0 20px;
+  color: #5f6f89;
+}
+
+.uploadBox {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed #a8bad4;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.uploadBox input {
+  width: 100%;
+}
+
+.pathText {
+  margin-top: 12px;
+  padding: 10px;
+  background: #f2f5f9;
+  border-radius: 6px;
+  word-break: break-all;
+  font-size: 12px;
+}
+
+.chatPanel {
+  display: flex;
+  flex-direction: column;
+}
+
+.messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.message {
+  max-width: 78%;
+  padding: 12px 14px;
+  border-radius: 8px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.message.assistant {
+  align-self: flex-start;
+  background: #eef4ff;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: #1f6feb;
+  color: #ffffff;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr 88px;
+  gap: 10px;
+  padding-top: 16px;
+}
+
+.composer input {
+  height: 44px;
+  border: 1px solid #c8d3e3;
+  border-radius: 6px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.composer button {
+  border: 0;
+  border-radius: 6px;
+  background: #1f6feb;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.composer button:disabled {
+  background: #8aa9d6;
+}
+
+.resultPanel h2,
+.resultPanel h3 {
+  margin-top: 0;
+}
+
+.statusBox,
+.emptyState,
+.resultCard {
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.emptyState {
+  color: #5f6f89;
+}
+
+.resultCard p {
+  margin: 8px 0;
+}
+
+.resultCard small {
+  color: #5f6f89;
+}
+
+@media (max-width: 1080px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
