@@ -49,6 +49,18 @@ type TaskStatus = {
   error?: string;
 };
 
+async function requireOk(response: Response, fallback: string) {
+  if (response.ok) return;
+  let detail = fallback;
+  try {
+    const payload = await response.json();
+    detail = payload.detail || fallback;
+  } catch {
+    detail = fallback;
+  }
+  throw new Error(detail);
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -70,9 +82,7 @@ export default function Home() {
       method: "POST",
       body: form
     });
-    if (!response.ok) {
-      throw new Error("图片上传失败");
-    }
+    await requireOk(response, "图片上传失败");
     const payload = await response.json();
     setImagePath(payload.path);
     setMessages((items) => [...items, { role: "assistant", content: `已上传图片：${payload.filename}` }]);
@@ -81,6 +91,7 @@ export default function Home() {
   async function pollTask(taskId: string) {
     for (let attempt = 0; attempt < 120; attempt += 1) {
       const response = await fetch(`${API_BASE}/api/analysis/tasks/${taskId}`);
+      await requireOk(response, "查询任务状态失败");
       const payload: TaskStatus = await response.json();
       setTaskStatus(payload);
       if (payload.result?.analysis_id) {
@@ -114,9 +125,7 @@ export default function Home() {
           message: question
         })
       });
-      if (!response.ok) {
-        throw new Error("创建分析任务失败");
-      }
+      await requireOk(response, "创建分析任务失败");
       const analysis: AnalysisResponse = await response.json();
       setConversationId(analysis.conversation_id);
       setAnalysisId(analysis.analysis_id);
@@ -137,18 +146,26 @@ export default function Home() {
 
   async function createReview(index: number, decision: string) {
     if (!analysisId) return;
-    await fetch(`${API_BASE}/api/reviews`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        analysis_id: analysisId,
-        item_type: "hazard",
-        item_index: index,
-        decision,
-        note: decision === "accept" ? "前端确认隐患判断。" : "前端标记需要复核。"
-      })
-    });
-    setMessages((items) => [...items, { role: "assistant", content: `已记录人工复核：${decision}` }]);
+    try {
+      const response = await fetch(`${API_BASE}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysis_id: analysisId,
+          item_type: "hazard",
+          item_index: index,
+          decision,
+          note: decision === "accept" ? "前端确认隐患判断。" : "前端标记需要复核。"
+        })
+      });
+      await requireOk(response, "记录人工复核失败");
+      setMessages((items) => [...items, { role: "assistant", content: `已记录人工复核：${decision}` }]);
+    } catch (error) {
+      setMessages((items) => [
+        ...items,
+        { role: "assistant", content: error instanceof Error ? error.message : "人工复核失败" }
+      ]);
+    }
   }
 
   async function createRemediation(index: number, hazard: Hazard) {
@@ -157,19 +174,27 @@ export default function Home() {
     const recommendation = hazard.rule
       ? `请按规则依据落实整改：${hazard.rule}`
       : "请现场复核并补齐对应防护措施。";
-    await fetch(`${API_BASE}/api/remediations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        conversation_id: conversationId,
-        analysis_id: analysisId,
-        hazard_index: index,
-        title,
-        recommendation,
-        hazard_json: hazard
-      })
-    });
-    setMessages((items) => [...items, { role: "assistant", content: `已创建整改任务：${title}` }]);
+    try {
+      const response = await fetch(`${API_BASE}/api/remediations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          analysis_id: analysisId,
+          hazard_index: index,
+          title,
+          recommendation,
+          hazard_json: hazard
+        })
+      });
+      await requireOk(response, "创建整改任务失败");
+      setMessages((items) => [...items, { role: "assistant", content: `已创建整改任务：${title}` }]);
+    } catch (error) {
+      setMessages((items) => [
+        ...items,
+        { role: "assistant", content: error instanceof Error ? error.message : "整改任务创建失败" }
+      ]);
+    }
   }
 
   const fused = taskStatus?.result?.fused_result;

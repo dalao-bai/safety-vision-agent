@@ -11,7 +11,7 @@ class SafetyExpertAgent:
     '''多轮隐患识别专家 Agent。
 
     当前实现是可运行的编排骨架。真实 LLM 对话大脑、VLM API 地址和 YOLO
-    权重由后续配置接入。
+    YOLO API 由后续配置接入。
     '''
 
     async def handle(self, request: ChatRequest) -> ChatResponse:

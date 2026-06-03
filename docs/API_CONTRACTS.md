@@ -42,6 +42,39 @@
 }
 ```
 
+## YOLO 检测 API
+
+Agent 只接受 YOLO API，不在本项目中保存或加载 YOLO 权重。
+
+### 请求
+
+```json
+{
+  "image_path": "uploads/example.jpg",
+  "tasks": ["person", "helmet", "no_helmet"],
+  "confidence_threshold": 0.25
+}
+```
+
+### 响应
+
+```json
+{
+  "detections": [
+    {
+      "label": "no_helmet",
+      "bbox": [300, 120, 420, 500],
+      "confidence": 0.91
+    }
+  ],
+  "summary": {
+    "person_count": 3,
+    "helmet_count": 2,
+    "no_helmet_count": 1
+  }
+}
+```
+
 ## 后端接口
 
 ### 上传图片
@@ -74,39 +107,10 @@ GET /api/analysis/{analysis_id}
 POST /api/reviews
 ```
 
-请求：
-
-```json
-{
-  "analysis_id": "analysis_xxx",
-  "item_type": "hazard",
-  "item_index": 0,
-  "decision": "accept",
-  "reviewer": "human",
-  "revised_json": {},
-  "note": "确认该隐患判断。"
-}
-```
-
 ### 创建整改任务
 
 ```text
 POST /api/remediations
-```
-
-请求：
-
-```json
-{
-  "conversation_id": "conv_xxx",
-  "analysis_id": "analysis_xxx",
-  "hazard_index": 0,
-  "title": "整改任务 1：楼层临边防护",
-  "recommendation": "请设置连续可靠的防护栏杆。",
-  "responsible_person": null,
-  "due_at": null,
-  "hazard_json": {}
-}
 ```
 
 ### 上传整改证据

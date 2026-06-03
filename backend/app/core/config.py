@@ -21,7 +21,9 @@ class Settings(BaseSettings):
     vlm_model_name: str = ""
     vlm_timeout_seconds: int = 120
 
-    yolo_helmet_model_path: str = ""
+    yolo_api_base_url: str = ""
+    yolo_api_key: str = ""
+    yolo_timeout_seconds: int = 60
     yolo_confidence_threshold: float = 0.25
 
     rule_blocks_path: str = "../configs/rules/four_openings_edges_rule_blocks.example.json"
@@ -29,6 +31,7 @@ class Settings(BaseSettings):
     upload_dir: str = "./runtime/uploads"
     output_dir: str = "./runtime/outputs"
     report_dir: str = "./runtime/reports"
+    max_upload_size_mb: int = 20
 
 
 @lru_cache

@@ -14,4 +14,4 @@ uvicorn app.main:app --reload
 
 ## 说明
 
-当前 VLM API、LLM API 和 YOLO 权重均为空配置，需要在 `.env` 中填写。
+当前 VLM API、LLM API 和 YOLO API 均为空配置，需要在 `.env` 中填写。

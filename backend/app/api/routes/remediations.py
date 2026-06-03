@@ -1,9 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.db.repositories import add_remediation_evidence, create_remediation_task, update_remediation_status
+from app.db.models import RemediationTask
+from app.db.repositories import (
+    add_remediation_evidence,
+    create_remediation_task,
+    latest_fused_result,
+    update_remediation_status,
+)
 from app.db.session import get_db
 from app.models.schemas import (
+    FusedResult,
     RemediationCreateRequest,
     RemediationEvidenceRequest,
     RemediationResponse,
@@ -14,8 +21,18 @@ from app.models.schemas import (
 router = APIRouter()
 
 
+def _validate_hazard_target(db: Session, request: RemediationCreateRequest) -> None:
+    record = latest_fused_result(db, request.analysis_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="analysis result not found")
+    fused = FusedResult.model_validate(record.result_json)
+    if request.hazard_index < 0 or request.hazard_index >= len(fused.hazards):
+        raise HTTPException(status_code=400, detail="hazard_index out of range")
+
+
 @router.post("", response_model=RemediationResponse)
 def create_remediation(request: RemediationCreateRequest, db: Session = Depends(get_db)) -> RemediationResponse:
+    _validate_hazard_target(db, request)
     task = create_remediation_task(
         db=db,
         conversation_id=request.conversation_id,
@@ -42,7 +59,10 @@ def submit_remediation_evidence(
     request: RemediationEvidenceRequest,
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
-    evidence = add_remediation_evidence(db, task_id=task_id, image_path=request.image_path, note=request.note)
+    task = db.get(RemediationTask, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="remediation task not found")
+    evidence = add_remediation_evidence(db, task=task, image_path=request.image_path, note=request.note)
     return {"evidence_id": evidence.id, "task_id": task_id, "status": "submitted"}
 
 

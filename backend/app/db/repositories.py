@@ -1,4 +1,5 @@
 from datetime import datetime
+from time import perf_counter
 
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,7 @@ from app.db.models import (
     Message,
     RemediationEvidence,
     RemediationTask,
+    ToolCall,
     UploadedFile,
     VLMResult,
     YOLOResult,
@@ -93,6 +95,70 @@ def save_analysis_results(db: Session, analysis_id: str, vlm_json: dict, yolo_js
     db.commit()
 
 
+def latest_fused_result(db: Session, analysis_id: str) -> FusedResultRecord | None:
+    return (
+        db.query(FusedResultRecord)
+        .filter(FusedResultRecord.analysis_id == analysis_id)
+        .order_by(FusedResultRecord.created_at.desc())
+        .first()
+    )
+
+
+def create_tool_call(
+    db: Session,
+    conversation_id: str,
+    analysis_id: str | None,
+    tool_name: str,
+    status: str,
+    input_json: dict,
+    output_json: dict,
+    latency_ms: float | None = None,
+) -> ToolCall:
+    call = ToolCall(
+        conversation_id=conversation_id,
+        analysis_id=analysis_id,
+        tool_name=tool_name,
+        status=status,
+        input_json=input_json,
+        output_json=output_json,
+        latency_ms=latency_ms,
+    )
+    db.add(call)
+    db.commit()
+    db.refresh(call)
+    return call
+
+
+def timed_tool_call(db: Session, conversation_id: str, analysis_id: str, tool_name: str, input_json: dict, fn):
+    started = perf_counter()
+    try:
+        result = fn()
+        output_json = result if isinstance(result, dict) else {"result": str(result)}
+        create_tool_call(
+            db,
+            conversation_id=conversation_id,
+            analysis_id=analysis_id,
+            tool_name=tool_name,
+            status="ok",
+            input_json=input_json,
+            output_json=output_json,
+            latency_ms=(perf_counter() - started) * 1000,
+        )
+        return result
+    except Exception as exc:
+        create_tool_call(
+            db,
+            conversation_id=conversation_id,
+            analysis_id=analysis_id,
+            tool_name=tool_name,
+            status="error",
+            input_json=input_json,
+            output_json={"error": str(exc)},
+            latency_ms=(perf_counter() - started) * 1000,
+        )
+        raise
+
+
 def create_human_review(
     db: Session,
     analysis_id: str,
@@ -146,12 +212,10 @@ def create_remediation_task(
     return task
 
 
-def add_remediation_evidence(db: Session, task_id: str, image_path: str, note: str) -> RemediationEvidence:
-    evidence = RemediationEvidence(remediation_task_id=task_id, image_path=image_path, note=note)
-    task = db.get(RemediationTask, task_id)
-    if task:
-        task.status = "submitted"
-        task.updated_at = datetime.utcnow()
+def add_remediation_evidence(db: Session, task: RemediationTask, image_path: str, note: str) -> RemediationEvidence:
+    evidence = RemediationEvidence(remediation_task_id=task.id, image_path=image_path, note=note)
+    task.status = "submitted"
+    task.updated_at = datetime.utcnow()
     db.add(evidence)
     db.commit()
     db.refresh(evidence)

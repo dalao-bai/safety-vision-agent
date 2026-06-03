@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import analysis, chat, files, health, remediations, reports, reviews
 from app.core.config import get_settings
-from app.db.init import create_db_and_tables
+from app.db.init import run_migrations
 
 
 settings = get_settings()
@@ -12,8 +12,8 @@ app = FastAPI(title=settings.app_name)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -22,7 +22,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     if settings.app_env == "development":
-        create_db_and_tables()
+        run_migrations()
 
 
 app.include_router(health.router, prefix="/api", tags=["health"])
