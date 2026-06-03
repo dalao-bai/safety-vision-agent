@@ -102,6 +102,8 @@ export default function Home() {
   const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
   const [annotationSample, setAnnotationSample] = useState<AnnotationSample | null>(null);
   const [reviewObjects, setReviewObjects] = useState<AnnotationObjectReview[]>([]);
+  const [reviewJsonTexts, setReviewJsonTexts] = useState<string[]>([]);
+  const [reviewJsonErrors, setReviewJsonErrors] = useState<Record<number, string>>({});
   const [isBusy, setIsBusy] = useState(false);
 
   async function uploadImage(file: File) {
@@ -215,7 +217,7 @@ export default function Home() {
       await requireOk(response, "创建标注复核样本失败");
       const payload: AnnotationSample = await response.json();
       setAnnotationSample(payload);
-      setReviewObjects(payload.review_json.objects || []);
+      loadAnnotationReviewObjects(payload.review_json.objects || []);
       setMessages((items) => [...items, { role: "assistant", content: `已创建标注复核样本：${payload.sample_id}` }]);
     } catch (error) {
       setMessages((items) => [
@@ -227,6 +229,8 @@ export default function Home() {
 
   async function saveAnnotationReview() {
     if (!annotationSample) return;
+    const parsedObjects = parsedReviewObjects();
+    if (!parsedObjects) return;
     try {
       const response = await fetch(`${API_BASE}/api/annotations/samples/${annotationSample.sample_id}/review`, {
         method: "PATCH",
@@ -234,14 +238,14 @@ export default function Home() {
         body: JSON.stringify({
           image_decision: "accept",
           review_status: "reviewed",
-          objects: reviewObjects,
+          objects: parsedObjects,
           note: "前端人工复核保存。"
         })
       });
       await requireOk(response, "保存标注复核失败");
       const payload: AnnotationSample = await response.json();
       setAnnotationSample(payload);
-      setReviewObjects(payload.review_json.objects || []);
+      loadAnnotationReviewObjects(payload.review_json.objects || []);
       setMessages((items) => [...items, { role: "assistant", content: "标注复核已保存。" }]);
     } catch (error) {
       setMessages((items) => [
@@ -253,6 +257,10 @@ export default function Home() {
 
   async function commitAnnotationSample() {
     if (!annotationSample) return;
+    if (Object.keys(reviewJsonErrors).length > 0) {
+      setMessages((items) => [...items, { role: "assistant", content: "复核 JSON 存在格式错误，请修正并保存后再生成训练样本。" }]);
+      return;
+    }
     try {
       const response = await fetch(`${API_BASE}/api/annotations/samples/${annotationSample.sample_id}/commit`, {
         method: "POST",
@@ -280,16 +288,51 @@ export default function Home() {
   }
 
   function updateReviewJson(index: number, value: string) {
+    setReviewJsonTexts((items) => items.map((item, itemIndex) => (itemIndex === index ? value : item)));
     setReviewObjects((items) =>
       items.map((item, itemIndex) => {
         if (itemIndex !== index) return item;
         try {
+          setReviewJsonErrors((errors) => {
+            const next = { ...errors };
+            delete next[index];
+            return next;
+          });
           return { ...item, revised: JSON.parse(value) };
-        } catch {
+        } catch (error) {
+          setReviewJsonErrors((errors) => ({
+            ...errors,
+            [index]: error instanceof Error ? error.message : "JSON 格式错误"
+          }));
           return item;
         }
       })
     );
+  }
+
+  function loadAnnotationReviewObjects(objects: AnnotationObjectReview[]) {
+    setReviewObjects(objects);
+    setReviewJsonTexts(objects.map((item) => JSON.stringify(item.revised, null, 2)));
+    setReviewJsonErrors({});
+  }
+
+  function parsedReviewObjects() {
+    if (Object.keys(reviewJsonErrors).length > 0) {
+      setMessages((items) => [...items, { role: "assistant", content: "复核 JSON 存在格式错误，请修正后再保存。" }]);
+      return null;
+    }
+    try {
+      return reviewObjects.map((item, index) => ({
+        ...item,
+        revised: JSON.parse(reviewJsonTexts[index] || "{}")
+      }));
+    } catch (error) {
+      setMessages((items) => [
+        ...items,
+        { role: "assistant", content: error instanceof Error ? `复核 JSON 格式错误：${error.message}` : "复核 JSON 格式错误" }
+      ]);
+      return null;
+    }
   }
 
   async function createRemediation(index: number, hazard: Hazard) {
@@ -430,9 +473,10 @@ export default function Home() {
                   <option value="reject">驳回</option>
                 </select>
                 <textarea
-                  value={JSON.stringify(item.revised, null, 2)}
+                  value={reviewJsonTexts[index] ?? JSON.stringify(item.revised, null, 2)}
                   onChange={(event) => updateReviewJson(index, event.target.value)}
                 />
+                {reviewJsonErrors[index] ? <small className="errorText">JSON 格式错误：{reviewJsonErrors[index]}</small> : null}
               </div>
             ))
           ) : null}

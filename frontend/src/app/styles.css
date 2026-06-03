@@ -194,6 +194,11 @@ body {
   background: #f8fafc;
 }
 
+.errorText {
+  color: #b42318;
+  font-weight: 600;
+}
+
 @media (max-width: 1080px) {
   .workspace {
     grid-template-columns: 1fr;

@@ -73,10 +73,6 @@ def create_from_analysis(request: AnnotationFromAnalysisRequest, db: Session = D
         review_json=review_json,
         note=request.note,
     )
-    sample.draft_json = {**sample.draft_json, "sample_id": sample.id}
-    sample.review_json = {**sample.review_json, "sample_id": sample.id}
-    db.commit()
-    db.refresh(sample)
     return sample_response(sample)
 
 
@@ -115,8 +111,8 @@ def commit_sample(sample_id: str, request: AnnotationCommitRequest, db: Session 
     accepted = build_accepted_records(sample.id, sample.image_path, sample.review_json, sample.draft_json)
     if accepted.get("errors"):
         raise HTTPException(status_code=400, detail={"message": "accepted records validation failed", "errors": accepted["errors"]})
-    candidate = commit_annotation_sample(db, sample, accepted, request.candidate_type)
     write_accepted_records(sample.id, accepted)
+    candidate = commit_annotation_sample(db, sample, accepted, request.candidate_type)
     return AnnotationCommitResponse(
         sample_id=sample.id,
         status=sample.status,

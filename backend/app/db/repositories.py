@@ -294,6 +294,10 @@ def create_annotation_sample(
     db.add(sample)
     db.commit()
     db.refresh(sample)
+    draft_json = {**draft_json, "sample_id": sample.id}
+    review_json = {**review_json, "sample_id": sample.id}
+    sample.draft_json = draft_json
+    sample.review_json = review_json
     for obj in draft_json.get("objects") or []:
         db.add(
             AnnotationObjectDraft(
@@ -305,6 +309,7 @@ def create_annotation_sample(
             )
         )
     db.commit()
+    db.refresh(sample)
     return sample
 
 
