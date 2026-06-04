@@ -2,12 +2,12 @@
 
 ## 总体原则
 
-当前 MVP 优先简单可跑：不用 ORM、迁移框架、队列、Redis、PostgreSQL 和复杂 Agent 框架。复杂度放在业务能力上：多轮记忆、工具调用、证据融合、整改、报告和标注反哺。
+当前 MVP 优先简单可跑：不用 ORM、迁移框架、队列、Redis 和 PostgreSQL。复杂度放在业务能力上：多轮记忆、工具调用、证据融合、整改、报告和标注反哺。Agent 编排主线使用 LangGraph/LangChain。
 
 ```text
 Vite React 控制台
 -> FastAPI
--> 轻量 Agent 状态机
+-> LangGraph Agent 编排层
 -> SQLite 业务记忆
 -> VLM / YOLO / 规则 / 融合 / 整改 / 报告 / 标注工具
 ```
@@ -18,7 +18,7 @@ Vite React 控制台
 
 ```text
 backend/app/agent/
-  graph.py      简单状态机执行器
+  graph.py      LangGraph StateGraph 编排
   nodes.py      加载记忆、分类、分析、依据、整改、报告、持久化节点
   router.py     确定性意图路由
   tools.py      统一工具包装和 tool_calls 记录
@@ -57,7 +57,7 @@ FusedResult
 
 ## 后续可选升级
 
-- 如果状态分支继续复杂，再引入 LangGraph。
+- 如果状态分支继续复杂，扩展 LangGraph 节点和路由。
 - 如果并发和耗时指标证明需要，再引入队列。
 - 如果进入生产多用户数据，再考虑 PostgreSQL。
 - 如果需要跨历史案例语义检索，再引入向量库。

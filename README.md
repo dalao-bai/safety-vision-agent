@@ -2,7 +2,7 @@
 
 多轮对话式施工安全隐患识别专家 Agent。
 
-当前 MVP 主线是 `FastAPI + SQLite + Vite React`，后端使用轻量 Agent 状态机编排工具。系统支持上传施工现场图片后多轮追问：隐患识别、依据解释、整改建议、报告生成、人工复核和标注反哺。
+当前 MVP 主线是 `FastAPI + LangGraph + SQLite + Vite React`。系统支持上传施工现场图片后多轮追问：隐患识别、依据解释、整改建议、报告生成、人工复核和标注反哺。
 
 ## 核心能力
 
@@ -16,7 +16,7 @@
 ## 目录
 
 ```text
-backend/          FastAPI、Agent 状态机、SQLite repository、工具服务
+backend/          FastAPI、LangGraph Agent、SQLite repository、工具服务
 frontend/         Vite React Agent 控制台
 configs/          规则示例
 docs/             架构、API、路线图和计划
@@ -65,4 +65,4 @@ RULE_BLOCKS_PATH=configs/rules/four_openings_edges_rule_blocks.example.json
 
 ## 已移出 MVP 主线
 
-SQLAlchemy、Alembic、Celery、Redis、PostgreSQL/psycopg、pydantic-settings、LangGraph checkpoint 和 Next.js 已移出当前运行路径。队列、高并发、PostgreSQL 迁移、向量检索和更完整产品 UI 都作为后续扩展处理。
+SQLAlchemy、Alembic、Celery、Redis、PostgreSQL/psycopg、pydantic-settings 和 Next.js 已移出当前运行路径。LangGraph/LangChain 是当前 Agent 编排主线。队列、高并发、PostgreSQL 迁移、向量检索和更完整产品 UI 都作为后续扩展处理。

@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI 后端，负责文件上传、轻量 Agent 编排、工具调用和 SQLite 业务记忆。
+FastAPI 后端，负责文件上传、LangGraph Agent 编排、工具调用和 SQLite 业务记忆。
 
 ## 启动
 

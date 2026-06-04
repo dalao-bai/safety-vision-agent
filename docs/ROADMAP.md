@@ -4,7 +4,7 @@
 
 - FastAPI 后端。
 - SQLite 业务记忆。
-- 轻量多轮 Agent 状态机。
+- LangGraph 多轮 Agent。
 - Vite React 验证控制台。
 - 图片上传、Agent chat、结构化结果展示。
 
@@ -35,7 +35,7 @@
 - 按指标决定是否重新引入队列。
 - PostgreSQL 迁移。
 - 向量检索历史案例。
-- LangGraph 工作流升级。
+- 扩展 LangGraph 工作流。
 - 权限、审计和部署。
 
 当前仓库已经完成阶段 1 的主线重构，并保留阶段 4 的单样本标注反哺闭环第一版。

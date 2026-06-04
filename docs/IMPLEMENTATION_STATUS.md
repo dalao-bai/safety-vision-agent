@@ -2,7 +2,7 @@
 
 ## 已接入
 
-- FastAPI + SQLite + 轻量 Agent 状态机 MVP 主线。
+- FastAPI + LangGraph + SQLite MVP 主线。
 - SQLite schema 和 repository，启动时自动初始化应用业务表。
 - Agent 多轮入口 `/api/chat`，返回 answer、conversation_id、latest_analysis_id、fused_result、tool_calls、artifacts、errors。
 - 会话记忆、图片历史、最新融合结果和“第 N 个隐患”追问解析。
@@ -32,7 +32,7 @@
 - Redis / Celery worker。
 - PostgreSQL / psycopg 兼容。
 - pydantic-settings。
-- LangGraph checkpoint。
+- LangGraph SQLite checkpoint。
 - Next.js。
 
 ## 启动提示

@@ -8,6 +8,7 @@
 - 坐标：所有 `bbox` 均为像素坐标 `[x1, y1, x2, y2]`，原点在图片左上角。
 - 置信度：`confidence` 使用 `0.0 - 1.0` 浮点数。
 - MVP 数据库：仅 SQLite，路径由 `SQLITE_PATH` 配置。
+- Agent 编排：LangGraph。
 - 主交互：前端优先使用 `POST /api/chat`，旧 task polling 不再是主流程。
 
 ## 后端 Agent API
