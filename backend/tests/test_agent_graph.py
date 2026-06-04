@@ -49,6 +49,15 @@ async def test_react_trace_is_persisted_and_visible(graph_db) -> None:
 
 
 @pytest.mark.anyio
+async def test_single_image_latest_analysis_keeps_real_image_path(graph_db) -> None:
+    result = await run_safety_agent({"user_message": "分析这张图", "image_path": graph_db.as_posix()})
+
+    analysis = repositories.get_analysis_task(result["latest_analysis_id"])
+
+    assert analysis.image_path == graph_db.as_posix()
+
+
+@pytest.mark.anyio
 async def test_remediation_advice_does_not_create_task_without_explicit_create(graph_db) -> None:
     first = await run_safety_agent({"user_message": "分析这张图", "image_path": graph_db.as_posix()})
 
@@ -56,6 +65,24 @@ async def test_remediation_advice_does_not_create_task_without_explicit_create(g
 
     assert "remediation_task" not in second["artifacts"]
     assert repositories.list_remediation_tasks(conversation_id=first["conversation_id"]) == []
+
+
+@pytest.mark.anyio
+async def test_visual_tool_failure_is_reported(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SQLITE_PATH", (tmp_path / "agent.sqlite3").as_posix())
+    monkeypatch.setenv("UPLOAD_DIR", tmp_path.as_posix())
+    monkeypatch.setenv("VLM_API_BASE_URL", "http://127.0.0.1:1/unavailable")
+    monkeypatch.setenv("VLM_API_KEY", "")
+    monkeypatch.setenv("VLM_MODEL_NAME", "test")
+    get_settings.cache_clear()
+    image = tmp_path / "site.jpg"
+    image.write_bytes(b"fake image")
+    initialize_database()
+
+    result = await run_safety_agent({"user_message": "分析这张图", "image_path": image.as_posix()})
+
+    assert result["errors"][0]["code"] == "visual_tool_failed"
+    assert "失败" in result["answer"]
 
 
 @pytest.mark.anyio

@@ -185,6 +185,14 @@ def _with_source(value: Any, source: dict) -> dict:
     }
 
 
+def _source_fused_result(fused: FusedResult, source: dict) -> FusedResult:
+    fused_json = fused.model_dump()
+    fused_json["hazards"] = [_with_source(item, source) for item in fused_json.get("hazards", [])]
+    fused_json["detections"] = [_with_source(item, source) for item in fused_json.get("detections", [])]
+    fused_json["uncertain_items"] = [_with_source(item, source) for item in fused_json.get("uncertain_items", [])]
+    return FusedResult.model_validate(fused_json)
+
+
 async def run_multi_image_analysis_tool(
     conversation_id: str,
     message: str,
@@ -220,18 +228,34 @@ async def run_multi_image_analysis_tool(
         analysis_id = result.get("analysis_id")
         source = {"file_id": ref["file_id"], "analysis_id": analysis_id, "source_label": source_label}
         tool_calls.extend(result.get("tool_calls", []))
-        analyses.append(
-            {
-                "source_label": source_label,
-                "file_id": ref["file_id"],
-                "image_path": result.get("image_path") or ref["image_path"],
+        analysis_record = {
+            "source_label": source_label,
+            "file_id": ref["file_id"],
+            "image_path": result.get("image_path") or ref["image_path"],
+            "analysis_id": analysis_id,
+            "error": result.get("error"),
+        }
+        analyses.append(analysis_record)
+        if result.get("error"):
+            return {
                 "analysis_id": analysis_id,
-                "error": result.get("error"),
+                "analyses": analyses,
+                "fused_result": None,
+                "tool_calls": tool_calls,
+                "error": result["error"],
             }
-        )
         fused = result.get("fused_result")
         if not fused:
             continue
+        if len(image_refs) == 1:
+            sourced = _source_fused_result(fused, source)
+            repositories.save_fused_result(analysis_id, sourced.model_dump())
+            return {
+                "analysis_id": analysis_id,
+                "analyses": analyses,
+                "fused_result": sourced,
+                "tool_calls": tool_calls,
+            }
         fused_json = fused.model_dump() if hasattr(fused, "model_dump") else fused
         combined["hazards"].extend(_with_source(item, source) for item in fused_json.get("hazards", []))
         combined["detections"].extend(_with_source(item, source) for item in fused_json.get("detections", []))

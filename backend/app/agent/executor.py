@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from app.agent.formatter import build_evidence_gap_answer, build_final_answer, build_rule_answer
+from app.agent.prompts import TOOL_FAILURE_PROMPT
 from app.agent.planner import APPROVED_ACTIONS, AgentAction, DeterministicReActPlanner, max_agent_steps, planner_mode
 from app.agent.tools import (
     answer_rule_basis_tool,
@@ -104,6 +105,9 @@ class ReActSafetyAgent:
                 )
                 next_state["tool_calls"] = [*state.get("tool_calls", []), *result.get("tool_calls", [])]
                 if result.get("error"):
+                    next_state["latest_analysis_id"] = result.get("analysis_id")
+                    next_state["artifacts"] = {**state.get("artifacts", {}), "analyses": result.get("analyses", [])}
+                    next_state["answer"] = TOOL_FAILURE_PROMPT
                     next_state = self._append_error(next_state, result["error"], {})
                     return self._observe(next_state, action, "error", {"error": result["error"]})
                 fused = result.get("fused_result")
