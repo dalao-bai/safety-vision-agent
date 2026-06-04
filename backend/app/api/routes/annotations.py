@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 
 from app.db.models import AnalysisTask, AnnotationSample
+from app.core.config import get_settings
 from app.db.repositories import (
     commit_annotation_sample,
     create_annotation_batch,
@@ -124,7 +125,7 @@ def commit_sample(sample_id: str, request: AnnotationCommitRequest, db: Session 
 
 
 def write_accepted_records(sample_id: str, accepted: dict) -> None:
-    output_dir = Path("outputs/annotation_feedback") / sample_id
+    output_dir = get_settings().output_path / "annotation_feedback" / sample_id
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "accepted_records.json").write_text(json.dumps(accepted, ensure_ascii=False, indent=2), encoding="utf-8")
     write_jsonl(output_dir / "images.jsonl", accepted.get("images") or [])

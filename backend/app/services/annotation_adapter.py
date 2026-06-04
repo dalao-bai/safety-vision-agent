@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -20,7 +20,7 @@ def build_draft_from_analysis(sample_id: str, image_path: str, fused_result: dic
         "sample_id": sample_id,
         "image_path": image_path,
         "scene": "four_openings_edges",
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "source": "analysis_result",
         "model_outputs": {
             "vlm": vlm_result,

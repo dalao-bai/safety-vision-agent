@@ -1,5 +1,6 @@
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException
+from kombu.exceptions import OperationalError
 from sqlalchemy.orm import Session
 
 from app.db.models import FusedResultRecord
@@ -8,9 +9,11 @@ from app.db.repositories import (
     attach_celery_task,
     create_analysis_task,
     get_or_create_conversation,
+    update_analysis_status,
 )
 from app.db.session import get_db
 from app.models.schemas import AnalysisRequest, AnalysisResponse, AnalysisResultResponse, FusedResult, TaskStatusResponse
+from app.services.file_storage import get_uploaded_image_path
 from app.tasks.analysis_tasks import analyze_image_task
 from app.tasks.celery_app import celery_app
 
@@ -22,15 +25,20 @@ router = APIRouter()
 def create_analysis(request: AnalysisRequest, db: Session = Depends(get_db)) -> AnalysisResponse:
     conversation = get_or_create_conversation(db, request.conversation_id)
     add_message(db, conversation.id, "user", request.message)
-    analysis = create_analysis_task(db, conversation.id, request.image_path, request.message)
+    image_path = get_uploaded_image_path(db, request.file_id, request.image_path)
+    analysis = create_analysis_task(db, conversation.id, image_path, request.message)
 
-    async_result = analyze_image_task.delay(
-        analysis_id=analysis.id,
-        conversation_id=conversation.id,
-        image_path=request.image_path,
-        message=request.message,
-        selected_bbox=request.selected_bbox,
-    )
+    try:
+        async_result = analyze_image_task.delay(
+            analysis_id=analysis.id,
+            conversation_id=conversation.id,
+            image_path=image_path,
+            message=request.message,
+            selected_bbox=request.selected_bbox,
+        )
+    except (OperationalError, OSError) as exc:
+        update_analysis_status(db, analysis.id, "failed")
+        raise HTTPException(status_code=503, detail=f"analysis queue unavailable: {exc}") from exc
     attach_celery_task(db, analysis.id, async_result.id)
 
     return AnalysisResponse(

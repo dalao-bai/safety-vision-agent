@@ -84,10 +84,10 @@ RULE_BLOCKS_PATH=
 -> 写入 training_candidates
 ```
 
-生成的训练候选记录会保存到数据库，同时在后端运行目录写入：
+生成的训练候选记录会保存到数据库，同时写入 `OUTPUT_DIR`：
 
 ```text
-outputs/annotation_feedback/{sample_id}/
+runtime/outputs/annotation_feedback/{sample_id}/
   accepted_records.json
   images.jsonl
   objects.jsonl

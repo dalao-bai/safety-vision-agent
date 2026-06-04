@@ -9,9 +9,9 @@ class RuleRetriever:
         self.settings = get_settings()
 
     def retrieve_for_prompt(self, object_id: str | None = None, top_k: int = 5) -> list[dict]:
-        path = Path(self.settings.rule_blocks_path)
+        path = self.settings.rule_blocks_file_path
         if not path.exists():
-            return []
+            raise FileNotFoundError(f"rule blocks file not found: {path}")
 
         rules = json.loads(path.read_text(encoding="utf-8"))
         if object_id:

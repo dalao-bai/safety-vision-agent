@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.db.repositories import add_uploaded_file
 from app.db.session import get_db
 from app.models.schemas import UploadedImageResponse
+from app.services.file_storage import resolve_upload_target
 
 
 router = APIRouter()
@@ -30,11 +31,8 @@ async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_d
     if len(data) > max_bytes:
         raise HTTPException(status_code=413, detail=f"image exceeds {settings.max_upload_size_mb} MB limit")
 
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
     file_id = f"img_{uuid4().hex}"
-    target = upload_dir / f"{file_id}{suffix}"
+    target = resolve_upload_target(f"{file_id}{suffix}")
     target.write_bytes(data)
 
     record = add_uploaded_file(

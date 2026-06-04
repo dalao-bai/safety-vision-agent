@@ -97,6 +97,7 @@ export default function Home() {
   ]);
   const [question, setQuestion] = useState("分析这张图有没有四口五临边隐患，并检查是否有人未佩戴安全帽。");
   const [imagePath, setImagePath] = useState("");
+  const [fileId, setFileId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
@@ -115,6 +116,7 @@ export default function Home() {
     });
     await requireOk(response, "图片上传失败");
     const payload = await response.json();
+    setFileId(payload.file_id);
     setImagePath(payload.path);
     setMessages((items) => [...items, { role: "assistant", content: `已上传图片：${payload.filename}` }]);
   }
@@ -141,7 +143,7 @@ export default function Home() {
 
   async function submitQuestion(event: FormEvent) {
     event.preventDefault();
-    if (!imagePath) {
+    if (!fileId) {
       setMessages((items) => [...items, { role: "assistant", content: "请先上传一张图片。" }]);
       return;
     }
@@ -155,7 +157,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversation_id: conversationId,
-          image_path: imagePath,
+          file_id: fileId,
           message: question
         })
       });

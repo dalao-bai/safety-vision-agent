@@ -76,7 +76,8 @@ class UploadedImageResponse(BaseModel):
 
 class AnalysisRequest(BaseModel):
     conversation_id: str | None = None
-    image_path: str
+    file_id: str | None = None
+    image_path: str | None = None
     message: str = "分析这张图中的施工安全隐患。"
     selected_bbox: BBox | None = None
 
