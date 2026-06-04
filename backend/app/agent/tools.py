@@ -206,6 +206,7 @@ async def run_multi_image_analysis_tool(
         return {"error": "image_required", "tool_calls": []}
 
     analyses: list[dict] = []
+    errors: list[dict] = []
     tool_calls: list[dict] = []
     combined = {
         "hazards": [],
@@ -237,13 +238,8 @@ async def run_multi_image_analysis_tool(
         }
         analyses.append(analysis_record)
         if result.get("error"):
-            return {
-                "analysis_id": analysis_id,
-                "analyses": analyses,
-                "fused_result": None,
-                "tool_calls": tool_calls,
-                "error": result["error"],
-            }
+            errors.append({"code": result["error"], "source_label": source_label, "analysis_id": analysis_id})
+            continue
         fused = result.get("fused_result")
         if not fused:
             continue
@@ -265,6 +261,15 @@ async def run_multi_image_analysis_tool(
 
     hazard_count = len(combined["hazards"])
     uncertain_count = len(combined["uncertain_items"])
+    if not any(not item.get("error") for item in analyses):
+        return {
+            "analysis_id": analyses[-1]["analysis_id"] if analyses else None,
+            "analyses": analyses,
+            "fused_result": None,
+            "tool_calls": tool_calls,
+            "error": "visual_tool_failed",
+            "errors": errors,
+        }
     combined["summary"] = f"共分析 {len(image_refs)} 张图片，发现 {hazard_count} 个明确隐患，{uncertain_count} 个证据不足项。"
     combined["recommendations"] = list(dict.fromkeys(combined["recommendations"]))
     aggregate = repositories.create_analysis_task(conversation_id, "aggregate:multi-image", message, status="running")
@@ -274,6 +279,7 @@ async def run_multi_image_analysis_tool(
         "analyses": analyses,
         "fused_result": FusedResult.model_validate(combined),
         "tool_calls": tool_calls,
+        "errors": errors,
     }
 
 

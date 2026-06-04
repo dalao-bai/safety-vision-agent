@@ -1,10 +1,12 @@
 import pytest
 
 from app.agent.graph import run_safety_agent
+from app.agent import tools
 from app.core.config import get_settings
 from app.db import repositories
 from app.db.sqlite import initialize_database
 from app.models.schemas import HazardObject
+from app.models.schemas import FusedResult
 
 
 @pytest.fixture()
@@ -83,6 +85,44 @@ async def test_visual_tool_failure_is_reported(tmp_path, monkeypatch) -> None:
 
     assert result["errors"][0]["code"] == "visual_tool_failed"
     assert "失败" in result["answer"]
+
+
+@pytest.mark.anyio
+async def test_multi_image_partial_failure_keeps_successful_result(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SQLITE_PATH", (tmp_path / "agent.sqlite3").as_posix())
+    monkeypatch.setenv("UPLOAD_DIR", tmp_path.as_posix())
+    get_settings.cache_clear()
+    first = tmp_path / "first.jpg"
+    second = tmp_path / "second.jpg"
+    first.write_bytes(b"fake image")
+    second.write_bytes(b"fake image")
+    initialize_database()
+
+    async def fake_analysis(conversation_id, message, file_id, image_path, selected_bbox):
+        if image_path == first.as_posix():
+            hazard = HazardObject(
+                object_id="edge",
+                object_name="临边",
+                bbox=[0, 0, 1, 1],
+                status="confirmed_hazard",
+                hazard_type="临边防护缺失",
+                visual_evidence="临边未见防护",
+                rule="临边应设置防护",
+            )
+            analysis = repositories.create_analysis_task(conversation_id, image_path, message)
+            fused = FusedResult(hazards=[hazard], summary="1 个隐患")
+            repositories.save_fused_result(analysis.id, fused.model_dump())
+            return {"analysis_id": analysis.id, "image_path": image_path, "fused_result": fused, "tool_calls": []}
+        analysis = repositories.create_analysis_task(conversation_id, image_path, message, status="failed")
+        return {"analysis_id": analysis.id, "image_path": image_path, "fused_result": None, "tool_calls": [], "error": "visual_tool_failed"}
+
+    monkeypatch.setattr(tools, "run_image_analysis_tool", fake_analysis)
+
+    result = await run_safety_agent({"user_message": "比较两张图", "image_paths": [first.as_posix(), second.as_posix()]})
+
+    assert result["latest_fused_result"]["hazards"][0]["source_label"] == "图片 1"
+    assert result["errors"][0]["code"] == "visual_tool_failed"
+    assert result["artifacts"]["analyses"][1]["error"] == "visual_tool_failed"
 
 
 @pytest.mark.anyio

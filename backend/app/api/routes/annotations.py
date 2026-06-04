@@ -38,6 +38,8 @@ def create_from_analysis(request: AnnotationFromAnalysisRequest) -> AnnotationSa
     analysis = get_analysis_task(request.analysis_id)
     if not analysis:
         raise HTTPException(status_code=404, detail="analysis task not found")
+    if analysis.image_path == "aggregate:multi-image":
+        raise HTTPException(status_code=400, detail="multi-image aggregate analysis cannot be annotated directly; use a source image analysis_id")
     fused = latest_fused_result(request.analysis_id)
     if not fused:
         raise HTTPException(status_code=404, detail="fused result not found")

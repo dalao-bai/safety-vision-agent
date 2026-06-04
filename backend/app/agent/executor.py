@@ -114,6 +114,8 @@ class ReActSafetyAgent:
                 next_state["latest_analysis_id"] = result.get("analysis_id")
                 next_state["latest_fused_result"] = fused.model_dump() if hasattr(fused, "model_dump") else fused
                 next_state["artifacts"] = {**state.get("artifacts", {}), "analyses": result.get("analyses", [])}
+                for error in result.get("errors", []):
+                    next_state = self._append_error(next_state, error.get("code", "tool_failed"), {key: value for key, value in error.items() if key != "code"})
                 return self._observe(next_state, action, "ok", {"analysis_count": len(result.get("analyses", []))})
 
             if action.name == "risk_score":
