@@ -1,20 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from pathlib import Path
 import json
+from pathlib import Path
 
-from app.db.models import AnalysisTask, AnnotationSample
+from fastapi import APIRouter, HTTPException
+
 from app.core.config import get_settings
 from app.db.repositories import (
     commit_annotation_sample,
     create_annotation_batch,
     create_annotation_sample,
+    get_analysis_task,
+    get_annotation_sample,
     latest_fused_result,
     latest_vlm_result,
     latest_yolo_result,
     update_annotation_review,
 )
-from app.db.session import get_db
 from app.models.schemas import (
     AnnotationCommitRequest,
     AnnotationCommitResponse,
@@ -34,17 +34,17 @@ router = APIRouter()
 
 
 @router.post("/from-analysis", response_model=AnnotationSampleResponse)
-def create_from_analysis(request: AnnotationFromAnalysisRequest, db: Session = Depends(get_db)) -> AnnotationSampleResponse:
-    analysis = db.get(AnalysisTask, request.analysis_id)
+def create_from_analysis(request: AnnotationFromAnalysisRequest) -> AnnotationSampleResponse:
+    analysis = get_analysis_task(request.analysis_id)
     if not analysis:
         raise HTTPException(status_code=404, detail="analysis task not found")
-    fused = latest_fused_result(db, request.analysis_id)
+    fused = latest_fused_result(request.analysis_id)
     if not fused:
         raise HTTPException(status_code=404, detail="fused result not found")
 
-    vlm = latest_vlm_result(db, request.analysis_id)
-    yolo = latest_yolo_result(db, request.analysis_id)
-    batch = create_annotation_batch(db, source="analysis_review", note=request.reason)
+    vlm = latest_vlm_result(request.analysis_id)
+    yolo = latest_yolo_result(request.analysis_id)
+    batch = create_annotation_batch(source="analysis_review", note=request.reason)
     draft_json = build_draft_from_analysis(
         sample_id="pending",
         image_path=analysis.image_path,
@@ -61,7 +61,6 @@ def create_from_analysis(request: AnnotationFromAnalysisRequest, db: Session = D
     )
     review_json["source_analysis_id"] = request.analysis_id
     sample = create_annotation_sample(
-        db=db,
         batch_id=batch.id,
         analysis_id=request.analysis_id,
         conversation_id=analysis.conversation_id,
@@ -78,16 +77,16 @@ def create_from_analysis(request: AnnotationFromAnalysisRequest, db: Session = D
 
 
 @router.get("/samples/{sample_id}", response_model=AnnotationSampleResponse)
-def get_sample(sample_id: str, db: Session = Depends(get_db)) -> AnnotationSampleResponse:
-    sample = db.get(AnnotationSample, sample_id)
+def get_sample(sample_id: str) -> AnnotationSampleResponse:
+    sample = get_annotation_sample(sample_id)
     if not sample:
         raise HTTPException(status_code=404, detail="annotation sample not found")
     return sample_response(sample)
 
 
 @router.patch("/samples/{sample_id}/review", response_model=AnnotationSampleResponse)
-def save_review(sample_id: str, request: AnnotationReviewUpdateRequest, db: Session = Depends(get_db)) -> AnnotationSampleResponse:
-    sample = db.get(AnnotationSample, sample_id)
+def save_review(sample_id: str, request: AnnotationReviewUpdateRequest) -> AnnotationSampleResponse:
+    sample = get_annotation_sample(sample_id)
     if not sample:
         raise HTTPException(status_code=404, detail="annotation sample not found")
     review_json = apply_review_update(
@@ -98,25 +97,26 @@ def save_review(sample_id: str, request: AnnotationReviewUpdateRequest, db: Sess
         objects=[item.model_dump() for item in request.objects],
         note=request.note,
     )
-    sample = update_annotation_review(db, sample, review_json)
-    return sample_response(sample)
+    updated = update_annotation_review(sample_id, review_json)
+    return sample_response(updated)
 
 
 @router.post("/samples/{sample_id}/commit", response_model=AnnotationCommitResponse)
-def commit_sample(sample_id: str, request: AnnotationCommitRequest, db: Session = Depends(get_db)) -> AnnotationCommitResponse:
+def commit_sample(sample_id: str, request: AnnotationCommitRequest) -> AnnotationCommitResponse:
     if request.append_to_db:
         raise HTTPException(status_code=400, detail="append_to_db is not supported by the Agent API yet; use generated accepted_records for manual export")
-    sample = db.get(AnnotationSample, sample_id)
+    sample = get_annotation_sample(sample_id)
     if not sample:
         raise HTTPException(status_code=404, detail="annotation sample not found")
     accepted = build_accepted_records(sample.id, sample.image_path, sample.review_json, sample.draft_json)
     if accepted.get("errors"):
         raise HTTPException(status_code=400, detail={"message": "accepted records validation failed", "errors": accepted["errors"]})
     write_accepted_records(sample.id, accepted)
-    candidate = commit_annotation_sample(db, sample, accepted, request.candidate_type)
+    candidate = commit_annotation_sample(sample.id, accepted, request.candidate_type)
+    updated = get_annotation_sample(sample.id)
     return AnnotationCommitResponse(
         sample_id=sample.id,
-        status=sample.status,
+        status=updated.status if updated else sample.status,
         accepted_images=len(accepted.get("images") or []),
         accepted_objects=len(accepted.get("objects") or []),
         training_candidate_id=candidate.id if candidate else None,
@@ -137,7 +137,7 @@ def write_jsonl(path: Path, records: list[dict]) -> None:
     path.write_text(text + ("\n" if text else ""), encoding="utf-8")
 
 
-def sample_response(sample: AnnotationSample) -> AnnotationSampleResponse:
+def sample_response(sample) -> AnnotationSampleResponse:
     return AnnotationSampleResponse(
         sample_id=sample.id,
         batch_id=sample.batch_id,

@@ -1,115 +1,276 @@
-from datetime import datetime
+import json
+import sqlite3
+from collections.abc import Callable
+from datetime import UTC, datetime
 from time import perf_counter
+from uuid import uuid4
 
-from sqlalchemy.orm import Session
-
-from app.db.models import (
-    AnnotationBatch,
-    AnnotationObjectDraft,
-    AnnotationSample,
-    AnalysisTask,
-    Conversation,
-    FusedResultRecord,
-    HumanReview,
-    Message,
-    RemediationEvidence,
-    RemediationTask,
-    TrainingCandidate,
-    ToolCall,
-    UploadedFile,
-    VLMResult,
-    YOLOResult,
-)
+from app.db.sqlite import connection_scope
 
 
-def get_or_create_conversation(db: Session, conversation_id: str | None) -> Conversation:
-    if conversation_id:
-        existing = db.get(Conversation, conversation_id)
-        if existing:
-            return existing
-    conversation = Conversation(id=conversation_id) if conversation_id else Conversation()
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
-    return conversation
+JSON_COLUMNS = {
+    "input_json",
+    "output_json",
+    "result_json",
+    "revised_json",
+    "hazard_json",
+    "model_output_json",
+    "yolo_output_json",
+    "fused_result_json",
+    "draft_json",
+    "review_json",
+    "accepted_record_json",
+    "object_json",
+    "payload_json",
+}
 
 
-def add_message(db: Session, conversation_id: str, role: str, content: str) -> Message:
-    message = Message(conversation_id=conversation_id, role=role, content=content)
-    db.add(message)
-    db.commit()
-    db.refresh(message)
-    return message
+class Record(dict):
+    def __getattr__(self, name: str):
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid4().hex}"
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _dump(value: dict | list | None) -> str:
+    return json.dumps(value or {}, ensure_ascii=False)
+
+
+def _record(row: sqlite3.Row | None) -> Record | None:
+    if row is None:
+        return None
+    data = dict(row)
+    for key in JSON_COLUMNS:
+        if key in data and isinstance(data[key], str):
+            data[key] = json.loads(data[key] or "{}")
+    return Record(data)
+
+
+def _records(rows: list[sqlite3.Row]) -> list[Record]:
+    return [record for row in rows if (record := _record(row)) is not None]
+
+
+def _insert(connection: sqlite3.Connection, table: str, values: dict) -> Record:
+    columns = list(values)
+    placeholders = ", ".join("?" for _ in columns)
+    connection.execute(
+        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
+        [values[column] for column in columns],
+    )
+    row = connection.execute(f"SELECT * FROM {table} WHERE id = ?", (values["id"],)).fetchone()
+    record = _record(row)
+    if record is None:
+        raise RuntimeError(f"failed to insert {table}")
+    return record
+
+
+def _get(connection: sqlite3.Connection, table: str, record_id: str) -> Record | None:
+    return _record(connection.execute(f"SELECT * FROM {table} WHERE id = ?", (record_id,)).fetchone())
+
+
+def get_or_create_conversation(conversation_id: str | None = None, title: str = "施工安全隐患识别会话", db=None) -> Record:
+    with connection_scope() as connection:
+        if conversation_id:
+            existing = _get(connection, "conversations", conversation_id)
+            if existing:
+                return existing
+        return _insert(
+            connection,
+            "conversations",
+            {
+                "id": conversation_id or new_id("conv"),
+                "title": title,
+                "created_at": _now(),
+                "updated_at": _now(),
+            },
+        )
+
+
+def add_message(conversation_id: str, role: str, content: str, db=None) -> Record:
+    with connection_scope() as connection:
+        return _insert(
+            connection,
+            "messages",
+            {
+                "id": new_id("msg"),
+                "conversation_id": conversation_id,
+                "role": role,
+                "content": content,
+                "created_at": _now(),
+            },
+        )
+
+
+def list_messages(conversation_id: str, limit: int = 20) -> list[Record]:
+    with connection_scope() as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM messages
+            WHERE conversation_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (conversation_id, limit),
+        ).fetchall()
+    return list(reversed(_records(rows)))
 
 
 def add_uploaded_file(
-    db: Session,
     original_name: str,
     stored_path: str,
     mime_type: str | None,
     conversation_id: str | None = None,
-) -> UploadedFile:
-    file_record = UploadedFile(
-        conversation_id=conversation_id,
-        original_name=original_name,
-        stored_path=stored_path,
-        mime_type=mime_type,
+    db=None,
+) -> Record:
+    with connection_scope() as connection:
+        return _insert(
+            connection,
+            "uploaded_files",
+            {
+                "id": new_id("file"),
+                "conversation_id": conversation_id,
+                "original_name": original_name,
+                "stored_path": stored_path,
+                "mime_type": mime_type,
+                "created_at": _now(),
+            },
+        )
+
+
+def get_uploaded_file(file_id: str) -> Record | None:
+    with connection_scope() as connection:
+        return _get(connection, "uploaded_files", file_id)
+
+
+def latest_uploaded_file(conversation_id: str) -> Record | None:
+    with connection_scope() as connection:
+        return _record(
+            connection.execute(
+                """
+                SELECT * FROM uploaded_files
+                WHERE conversation_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (conversation_id,),
+            ).fetchone()
+        )
+
+
+def create_analysis_task(conversation_id: str, image_path: str, user_message: str, status: str = "pending", db=None) -> Record:
+    with connection_scope() as connection:
+        return _insert(
+            connection,
+            "analysis_tasks",
+            {
+                "id": new_id("analysis"),
+                "conversation_id": conversation_id,
+                "image_path": image_path,
+                "user_message": user_message,
+                "status": status,
+                "created_at": _now(),
+                "updated_at": _now(),
+            },
+        )
+
+
+def get_analysis_task(analysis_id: str) -> Record | None:
+    with connection_scope() as connection:
+        return _get(connection, "analysis_tasks", analysis_id)
+
+
+def latest_analysis_for_conversation(conversation_id: str) -> Record | None:
+    with connection_scope() as connection:
+        return _record(
+            connection.execute(
+                """
+                SELECT * FROM analysis_tasks
+                WHERE conversation_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (conversation_id,),
+            ).fetchone()
+        )
+
+
+def update_analysis_status(analysis_id: str, status: str, db=None) -> None:
+    with connection_scope() as connection:
+        connection.execute(
+            "UPDATE analysis_tasks SET status = ?, updated_at = ? WHERE id = ?",
+            (status, _now(), analysis_id),
+        )
+
+
+def save_analysis_results(analysis_id: str, vlm_json: dict, yolo_json: dict, fused_json: dict, db=None) -> None:
+    with connection_scope() as connection:
+        _insert(connection, "vlm_results", {"id": new_id("vlm"), "analysis_id": analysis_id, "result_json": _dump(vlm_json), "created_at": _now()})
+        _insert(connection, "yolo_results", {"id": new_id("yolo"), "analysis_id": analysis_id, "result_json": _dump(yolo_json), "created_at": _now()})
+        _insert(connection, "fused_results", {"id": new_id("fused"), "analysis_id": analysis_id, "result_json": _dump(fused_json), "created_at": _now()})
+        connection.execute("UPDATE analysis_tasks SET status = ?, updated_at = ? WHERE id = ?", ("completed", _now(), analysis_id))
+
+
+def latest_fused_result(analysis_id: str, db=None) -> Record | None:
+    with connection_scope() as connection:
+        return _record(
+            connection.execute(
+                "SELECT * FROM fused_results WHERE analysis_id = ? ORDER BY created_at DESC LIMIT 1",
+                (analysis_id,),
+            ).fetchone()
+        )
+
+
+def latest_fused_result_for_conversation(conversation_id: str) -> tuple[Record, Record] | None:
+    with connection_scope() as connection:
+        row = connection.execute(
+            """
+            SELECT a.*, f.id AS fused_id, f.result_json AS fused_result_json, f.created_at AS fused_created_at
+            FROM analysis_tasks a
+            JOIN fused_results f ON f.analysis_id = a.id
+            WHERE a.conversation_id = ?
+            ORDER BY f.created_at DESC
+            LIMIT 1
+            """,
+            (conversation_id,),
+        ).fetchone()
+    if not row:
+        return None
+    analysis = Record({key: row[key] for key in row.keys() if key in {"id", "conversation_id", "image_path", "user_message", "status", "created_at", "updated_at"}})
+    fused = Record(
+        {
+            "id": row["fused_id"],
+            "analysis_id": row["id"],
+            "result_json": json.loads(row["fused_result_json"] or "{}"),
+            "created_at": row["fused_created_at"],
+        }
     )
-    db.add(file_record)
-    db.commit()
-    db.refresh(file_record)
-    return file_record
+    return analysis, fused
 
 
-def create_analysis_task(db: Session, conversation_id: str, image_path: str, user_message: str) -> AnalysisTask:
-    task = AnalysisTask(
-        conversation_id=conversation_id,
-        image_path=image_path,
-        user_message=user_message,
-        status="pending",
-    )
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return task
+def latest_vlm_result(analysis_id: str, db=None) -> Record | None:
+    with connection_scope() as connection:
+        return _record(
+            connection.execute("SELECT * FROM vlm_results WHERE analysis_id = ? ORDER BY created_at DESC LIMIT 1", (analysis_id,)).fetchone()
+        )
 
 
-def attach_celery_task(db: Session, analysis_id: str, celery_task_id: str) -> None:
-    task = db.get(AnalysisTask, analysis_id)
-    if task:
-        task.celery_task_id = celery_task_id
-        task.status = "queued"
-        task.updated_at = datetime.utcnow()
-        db.commit()
-
-
-def update_analysis_status(db: Session, analysis_id: str, status: str) -> None:
-    task = db.get(AnalysisTask, analysis_id)
-    if task:
-        task.status = status
-        task.updated_at = datetime.utcnow()
-        db.commit()
-
-
-def save_analysis_results(db: Session, analysis_id: str, vlm_json: dict, yolo_json: dict, fused_json: dict) -> None:
-    db.add(VLMResult(analysis_id=analysis_id, result_json=vlm_json))
-    db.add(YOLOResult(analysis_id=analysis_id, result_json=yolo_json))
-    db.add(FusedResultRecord(analysis_id=analysis_id, result_json=fused_json))
-    update_analysis_status(db, analysis_id, "completed")
-    db.commit()
-
-
-def latest_fused_result(db: Session, analysis_id: str) -> FusedResultRecord | None:
-    return (
-        db.query(FusedResultRecord)
-        .filter(FusedResultRecord.analysis_id == analysis_id)
-        .order_by(FusedResultRecord.created_at.desc())
-        .first()
-    )
+def latest_yolo_result(analysis_id: str, db=None) -> Record | None:
+    with connection_scope() as connection:
+        return _record(
+            connection.execute("SELECT * FROM yolo_results WHERE analysis_id = ? ORDER BY created_at DESC LIMIT 1", (analysis_id,)).fetchone()
+        )
 
 
 def create_tool_call(
-    db: Session,
     conversation_id: str,
     analysis_id: str | None,
     tool_name: str,
@@ -117,54 +278,64 @@ def create_tool_call(
     input_json: dict,
     output_json: dict,
     latency_ms: float | None = None,
-) -> ToolCall:
-    call = ToolCall(
-        conversation_id=conversation_id,
-        analysis_id=analysis_id,
-        tool_name=tool_name,
-        status=status,
-        input_json=input_json,
-        output_json=output_json,
-        latency_ms=latency_ms,
-    )
-    db.add(call)
-    db.commit()
-    db.refresh(call)
-    return call
+    db=None,
+) -> Record:
+    with connection_scope() as connection:
+        return _insert(
+            connection,
+            "tool_calls",
+            {
+                "id": new_id("tool"),
+                "conversation_id": conversation_id,
+                "analysis_id": analysis_id,
+                "tool_name": tool_name,
+                "status": status,
+                "input_json": _dump(input_json),
+                "output_json": _dump(output_json),
+                "latency_ms": latency_ms,
+                "created_at": _now(),
+            },
+        )
 
 
-def timed_tool_call(db: Session, conversation_id: str, analysis_id: str, tool_name: str, input_json: dict, fn):
+def list_tool_calls(conversation_id: str, analysis_id: str | None = None, limit: int = 20) -> list[Record]:
+    with connection_scope() as connection:
+        if analysis_id:
+            rows = connection.execute(
+                """
+                SELECT * FROM tool_calls
+                WHERE conversation_id = ? AND analysis_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (conversation_id, analysis_id, limit),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT * FROM tool_calls
+                WHERE conversation_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (conversation_id, limit),
+            ).fetchall()
+    return list(reversed(_records(rows)))
+
+
+def timed_tool_call(conversation_id: str, analysis_id: str | None, tool_name: str, input_json: dict, fn: Callable[[], object]):
     started = perf_counter()
     try:
         result = fn()
         output_json = result if isinstance(result, dict) else {"result": str(result)}
-        create_tool_call(
-            db,
-            conversation_id=conversation_id,
-            analysis_id=analysis_id,
-            tool_name=tool_name,
-            status="ok",
-            input_json=input_json,
-            output_json=output_json,
-            latency_ms=(perf_counter() - started) * 1000,
-        )
+        create_tool_call(conversation_id, analysis_id, tool_name, "ok", input_json, output_json, (perf_counter() - started) * 1000)
         return result
     except Exception as exc:
-        create_tool_call(
-            db,
-            conversation_id=conversation_id,
-            analysis_id=analysis_id,
-            tool_name=tool_name,
-            status="error",
-            input_json=input_json,
-            output_json={"error": str(exc)},
-            latency_ms=(perf_counter() - started) * 1000,
-        )
+        create_tool_call(conversation_id, analysis_id, tool_name, "error", input_json, {"error": str(exc)}, (perf_counter() - started) * 1000)
         raise
 
 
 def create_human_review(
-    db: Session,
     analysis_id: str,
     item_type: str,
     item_index: int,
@@ -172,24 +343,27 @@ def create_human_review(
     reviewer: str | None,
     revised_json: dict,
     note: str,
-) -> HumanReview:
-    review = HumanReview(
-        analysis_id=analysis_id,
-        item_type=item_type,
-        item_index=item_index,
-        decision=decision,
-        reviewer=reviewer,
-        revised_json=revised_json,
-        note=note,
-    )
-    db.add(review)
-    db.commit()
-    db.refresh(review)
-    return review
+    db=None,
+) -> Record:
+    with connection_scope() as connection:
+        return _insert(
+            connection,
+            "human_reviews",
+            {
+                "id": new_id("review"),
+                "analysis_id": analysis_id,
+                "item_type": item_type,
+                "item_index": item_index,
+                "reviewer": reviewer,
+                "decision": decision,
+                "revised_json": _dump(revised_json),
+                "note": note,
+                "created_at": _now(),
+            },
+        )
 
 
 def create_remediation_task(
-    db: Session,
     conversation_id: str | None,
     analysis_id: str,
     hazard_index: int,
@@ -198,73 +372,100 @@ def create_remediation_task(
     responsible_person: str | None,
     due_at,
     hazard_json: dict,
-) -> RemediationTask:
-    task = RemediationTask(
-        conversation_id=conversation_id,
-        analysis_id=analysis_id,
-        hazard_index=hazard_index,
-        title=title,
-        recommendation=recommendation,
-        responsible_person=responsible_person,
-        due_at=due_at,
-        hazard_json=hazard_json,
-        status="open",
-    )
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return task
+    db=None,
+) -> Record:
+    with connection_scope() as connection:
+        return _insert(
+            connection,
+            "remediation_tasks",
+            {
+                "id": new_id("remed"),
+                "conversation_id": conversation_id,
+                "analysis_id": analysis_id,
+                "hazard_index": hazard_index,
+                "title": title,
+                "recommendation": recommendation,
+                "responsible_person": responsible_person,
+                "status": "open",
+                "hazard_json": _dump(hazard_json),
+                "due_at": due_at.isoformat() if hasattr(due_at, "isoformat") else due_at,
+                "created_at": _now(),
+                "updated_at": _now(),
+            },
+        )
 
 
-def add_remediation_evidence(db: Session, task: RemediationTask, image_path: str, note: str) -> RemediationEvidence:
-    evidence = RemediationEvidence(remediation_task_id=task.id, image_path=image_path, note=note)
-    task.status = "submitted"
-    task.updated_at = datetime.utcnow()
-    db.add(evidence)
-    db.commit()
-    db.refresh(evidence)
-    return evidence
+def get_remediation_task(task_id: str) -> Record | None:
+    with connection_scope() as connection:
+        return _get(connection, "remediation_tasks", task_id)
 
 
-def update_remediation_status(db: Session, task_id: str, status: str) -> RemediationTask | None:
-    task = db.get(RemediationTask, task_id)
-    if not task:
-        return None
-    task.status = status
-    task.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(task)
-    return task
+def list_remediation_tasks(conversation_id: str | None = None, analysis_id: str | None = None) -> list[Record]:
+    query = "SELECT * FROM remediation_tasks"
+    params: list[str] = []
+    clauses: list[str] = []
+    if conversation_id:
+        clauses.append("conversation_id = ?")
+        params.append(conversation_id)
+    if analysis_id:
+        clauses.append("analysis_id = ?")
+        params.append(analysis_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC"
+    with connection_scope() as connection:
+        return _records(connection.execute(query, params).fetchall())
 
 
-def latest_vlm_result(db: Session, analysis_id: str) -> VLMResult | None:
-    return (
-        db.query(VLMResult)
-        .filter(VLMResult.analysis_id == analysis_id)
-        .order_by(VLMResult.created_at.desc())
-        .first()
-    )
+def add_remediation_evidence(task_id: str, image_path: str, note: str, db=None) -> Record:
+    with connection_scope() as connection:
+        evidence = _insert(
+            connection,
+            "remediation_evidence",
+            {
+                "id": new_id("evid"),
+                "remediation_task_id": task_id,
+                "image_path": image_path,
+                "note": note,
+                "created_at": _now(),
+            },
+        )
+        connection.execute("UPDATE remediation_tasks SET status = ?, updated_at = ? WHERE id = ?", ("submitted", _now(), task_id))
+        return evidence
 
 
-def latest_yolo_result(db: Session, analysis_id: str) -> YOLOResult | None:
-    return (
-        db.query(YOLOResult)
-        .filter(YOLOResult.analysis_id == analysis_id)
-        .order_by(YOLOResult.created_at.desc())
-        .first()
-    )
+def update_remediation_status(task_id: str, status: str, db=None) -> Record | None:
+    with connection_scope() as connection:
+        connection.execute("UPDATE remediation_tasks SET status = ?, updated_at = ? WHERE id = ?", (status, _now(), task_id))
+        return _get(connection, "remediation_tasks", task_id)
 
 
-def create_annotation_batch(db: Session, source: str, note: str = "") -> AnnotationBatch:
-    batch = AnnotationBatch(source=source, status="open", note=note)
-    db.add(batch)
-    db.commit()
-    db.refresh(batch)
-    return batch
+def create_report(conversation_id: str, analysis_id: str | None, title: str, markdown: str) -> Record:
+    with connection_scope() as connection:
+        return _insert(
+            connection,
+            "reports",
+            {
+                "id": new_id("report"),
+                "conversation_id": conversation_id,
+                "analysis_id": analysis_id,
+                "title": title,
+                "markdown": markdown,
+                "created_at": _now(),
+            },
+        )
+
+
+def create_annotation_batch(source: str, note: str = "", db=None) -> Record:
+    with connection_scope() as connection:
+        return _insert(
+            connection,
+            "annotation_batches",
+            {"id": new_id("annbatch"), "source": source, "status": "open", "note": note, "created_at": _now(), "updated_at": _now()},
+        )
 
 
 def create_annotation_sample(
-    db: Session,
     batch_id: str | None,
     analysis_id: str | None,
     conversation_id: str | None,
@@ -276,81 +477,107 @@ def create_annotation_sample(
     draft_json: dict,
     review_json: dict,
     note: str,
-) -> AnnotationSample:
-    sample = AnnotationSample(
-        batch_id=batch_id,
-        analysis_id=analysis_id,
-        conversation_id=conversation_id,
-        image_path=image_path,
-        status="pending_review",
-        source_type=source_type,
-        model_output_json=model_output_json,
-        yolo_output_json=yolo_output_json,
-        fused_result_json=fused_result_json,
-        draft_json=draft_json,
-        review_json=review_json,
-        note=note,
-    )
-    db.add(sample)
-    db.commit()
-    db.refresh(sample)
-    draft_json = {**draft_json, "sample_id": sample.id}
-    review_json = {**review_json, "sample_id": sample.id}
-    sample.draft_json = draft_json
-    sample.review_json = review_json
-    for obj in draft_json.get("objects") or []:
-        db.add(
-            AnnotationObjectDraft(
-                sample_id=sample.id,
-                draft_object_index=int(obj.get("draft_object_index", 0)),
-                object_json=obj,
-                decision="pending",
-                revised_json=obj,
-            )
+    db=None,
+) -> Record:
+    with connection_scope() as connection:
+        sample = _insert(
+            connection,
+            "annotation_samples",
+            {
+                "id": new_id("annsample"),
+                "batch_id": batch_id,
+                "analysis_id": analysis_id,
+                "conversation_id": conversation_id,
+                "image_path": image_path,
+                "status": "pending_review",
+                "source_type": source_type,
+                "model_output_json": _dump(model_output_json),
+                "yolo_output_json": _dump(yolo_output_json),
+                "fused_result_json": _dump(fused_result_json),
+                "draft_json": _dump({**draft_json, "sample_id": "pending"}),
+                "review_json": _dump({**review_json, "sample_id": "pending"}),
+                "accepted_record_json": "{}",
+                "note": note,
+                "created_at": _now(),
+                "updated_at": _now(),
+            },
         )
-    db.commit()
-    db.refresh(sample)
-    return sample
-
-
-def update_annotation_review(db: Session, sample: AnnotationSample, review_json: dict) -> AnnotationSample:
-    sample.review_json = review_json
-    sample.status = "reviewed"
-    sample.updated_at = datetime.utcnow()
-    for item in review_json.get("objects") or []:
-        draft = (
-            db.query(AnnotationObjectDraft)
-            .filter(
-                AnnotationObjectDraft.sample_id == sample.id,
-                AnnotationObjectDraft.draft_object_index == item.get("draft_object_index"),
-            )
-            .first()
+        draft_json = {**draft_json, "sample_id": sample.id}
+        review_json = {**review_json, "sample_id": sample.id}
+        connection.execute(
+            "UPDATE annotation_samples SET draft_json = ?, review_json = ? WHERE id = ?",
+            (_dump(draft_json), _dump(review_json), sample.id),
         )
-        if draft:
-            draft.decision = item.get("decision", "pending")
-            draft.revised_json = item.get("revised") or {}
-    db.commit()
-    db.refresh(sample)
-    return sample
+        for obj in draft_json.get("objects") or []:
+            _insert(
+                connection,
+                "annotation_object_drafts",
+                {
+                    "id": new_id("annobj"),
+                    "sample_id": sample.id,
+                    "draft_object_index": int(obj.get("draft_object_index", 0)),
+                    "object_json": _dump(obj),
+                    "decision": "pending",
+                    "revised_json": _dump(obj),
+                    "created_at": _now(),
+                },
+            )
+        return _get(connection, "annotation_samples", sample.id)
 
 
-def commit_annotation_sample(db: Session, sample: AnnotationSample, accepted_record_json: dict, candidate_type: str) -> TrainingCandidate | None:
-    sample.accepted_record_json = accepted_record_json
+def get_annotation_sample(sample_id: str) -> Record | None:
+    with connection_scope() as connection:
+        return _get(connection, "annotation_samples", sample_id)
+
+
+def update_annotation_review(sample_id: str, review_json: dict, db=None) -> Record:
+    with connection_scope() as connection:
+        connection.execute(
+            "UPDATE annotation_samples SET review_json = ?, status = ?, updated_at = ? WHERE id = ?",
+            (_dump(review_json), "reviewed", _now(), sample_id),
+        )
+        for item in review_json.get("objects") or []:
+            connection.execute(
+                """
+                UPDATE annotation_object_drafts
+                SET decision = ?, revised_json = ?
+                WHERE sample_id = ? AND draft_object_index = ?
+                """,
+                (
+                    item.get("decision", "pending"),
+                    _dump(item.get("revised") or {}),
+                    sample_id,
+                    item.get("draft_object_index"),
+                ),
+            )
+        record = _get(connection, "annotation_samples", sample_id)
+        if record is None:
+            raise ValueError("annotation sample not found")
+        return record
+
+
+def commit_annotation_sample(sample_id: str, accepted_record_json: dict, candidate_type: str, db=None) -> Record | None:
     accepted_count = len(accepted_record_json.get("objects") or [])
-    sample.status = "committed" if accepted_count else "reviewed"
-    sample.updated_at = datetime.utcnow()
-    candidate = None
-    if accepted_count:
-        candidate = TrainingCandidate(
-            sample_id=sample.id,
-            analysis_id=sample.analysis_id,
-            candidate_type=candidate_type,
-            status="ready",
-            payload_json=accepted_record_json,
+    status = "committed" if accepted_count else "reviewed"
+    with connection_scope() as connection:
+        connection.execute(
+            "UPDATE annotation_samples SET accepted_record_json = ?, status = ?, updated_at = ? WHERE id = ?",
+            (_dump(accepted_record_json), status, _now(), sample_id),
         )
-        db.add(candidate)
-    db.commit()
-    if candidate:
-        db.refresh(candidate)
-    db.refresh(sample)
-    return candidate
+        if not accepted_count:
+            return None
+        sample = _get(connection, "annotation_samples", sample_id)
+        return _insert(
+            connection,
+            "training_candidates",
+            {
+                "id": new_id("traincand"),
+                "sample_id": sample_id,
+                "analysis_id": sample.analysis_id if sample else None,
+                "candidate_type": candidate_type,
+                "status": "ready",
+                "source_reason": "human_revised_model_output",
+                "payload_json": _dump(accepted_record_json),
+                "created_at": _now(),
+            },
+        )

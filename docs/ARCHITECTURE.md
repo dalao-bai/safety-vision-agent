@@ -2,40 +2,48 @@
 
 ## 总体原则
 
-本项目采用工具编排式 Agent 架构：
+当前 MVP 优先简单可跑：不用 ORM、迁移框架、队列、Redis、PostgreSQL 和复杂 Agent 框架。复杂度放在业务能力上：多轮记忆、工具调用、证据融合、整改、报告和标注反哺。
 
 ```text
-用户多轮对话
--> Agent 理解意图
--> Agent 调用 VLM、YOLO、规则检索、报告生成等工具
--> Agent 融合证据
--> Agent 返回解释、建议和报告
+Vite React 控制台
+-> FastAPI
+-> 轻量 Agent 状态机
+-> SQLite 业务记忆
+-> VLM / YOLO / 规则 / 融合 / 整改 / 报告 / 标注工具
 ```
 
-微调 VLM 不是对话大脑，而是四口五临边视觉隐患识别工具。Agent 负责调度、记忆、追问、融合和解释。
+微调 VLM 不是对话大脑，而是视觉隐患识别工具。Agent 负责意图判断、历史检索、工具选择、证据融合、追问、整改和报告。
 
-## 模块
+## 后端模块
 
 ```text
-Frontend Chat UI
-  ↓
-FastAPI Backend
-  ↓
-SafetyExpertAgent
-  ├── Intent Router
-  ├── Memory Manager
-  ├── Tool Planner
-  ├── VLM Hazard Tool
-  ├── YOLO Helmet Tool
-  ├── Rule Retrieval Tool
-  ├── Evidence Fusion Tool
-  ├── Annotation Feedback Tool
-  └── Report Generator
+backend/app/agent/
+  graph.py      简单状态机执行器
+  nodes.py      加载记忆、分类、分析、依据、整改、报告、持久化节点
+  router.py     确定性意图路由
+  tools.py      统一工具包装和 tool_calls 记录
+  state.py      JSON 可序列化 Agent state
+
+backend/app/db/
+  schema.sql    应用业务表
+  sqlite.py     SQLite 连接和初始化
+  repositories.py 轻量 repository
+```
+
+会话、消息、图片、工具调用、分析结果、复核、整改、标注样本和训练候选都保存在应用自有 SQLite 表中。
+
+## 多轮流程
+
+```text
+用户消息
+-> 加载会话记忆和最新融合结果
+-> 分类：新图分析 / 依据追问 / 整改 / 报告 / 补证 / 记忆回答
+-> 必要时调用工具
+-> 保存用户消息、助手回答、工具调用和业务结果
+-> 返回 answer、conversation_id、latest_analysis_id、fused_result、tool_calls、artifacts
 ```
 
 ## 标注反哺闭环
-
-人工复核学习闭环独立于正常推理链路：
 
 ```text
 FusedResult
@@ -45,13 +53,11 @@ FusedResult
 -> TrainingCandidate
 ```
 
-`backend/app/annotation_pipeline/` 保存了从研究项目复制来的四口五临边 API 辅助标注流水线，保留批量草标、规则匹配、复核图、浏览器审核台和 accepted_records 转换能力。Agent 当前 API 先接入“从分析结果进入标注复核”的单样本闭环，后续批量图片草标可继续复用这套代码。
+`backend/app/annotation_pipeline/` 保留四口五临边 API 辅助标注流水线代码，后续可扩展批量草标和审核台。
 
-## 第一版边界
+## 后续可选升级
 
-- 支持图片级按需分析。
-- 支持多轮追问和历史结果引用。
-- 支持 VLM、YOLO 和规则检索工具。
-- 支持人工复核后的训练数据候选生成。
-- 不做 VLM 后台实时视频逐帧巡检。
-- 视频分析和人员轨迹作为后续扩展。
+- 如果状态分支继续复杂，再引入 LangGraph。
+- 如果并发和耗时指标证明需要，再引入队列。
+- 如果进入生产多用户数据，再考虑 PostgreSQL。
+- 如果需要跨历史案例语义检索，再引入向量库。

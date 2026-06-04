@@ -1,10 +1,9 @@
 from pathlib import Path
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
 
 from app.core.config import get_settings, resolve_project_path
-from app.db.models import UploadedFile
+from app.db.repositories import get_uploaded_file
 
 
 def ensure_parent_dir(path: Path) -> None:
@@ -14,8 +13,7 @@ def ensure_parent_dir(path: Path) -> None:
 def ensure_runtime_dirs() -> None:
     settings = get_settings()
     db_path = settings.database_file_path
-    if db_path:
-        ensure_parent_dir(db_path)
+    ensure_parent_dir(db_path)
     settings.upload_path.mkdir(parents=True, exist_ok=True)
     settings.output_path.mkdir(parents=True, exist_ok=True)
     settings.report_path.mkdir(parents=True, exist_ok=True)
@@ -31,9 +29,9 @@ def resolve_upload_target(filename: str) -> Path:
     return target
 
 
-def get_uploaded_image_path(db: Session, file_id: str | None, image_path: str | None) -> str:
+def get_uploaded_image_path(file_id: str | None, image_path: str | None) -> str:
     if file_id:
-        record = db.get(UploadedFile, file_id)
+        record = get_uploaded_file(file_id)
         if not record:
             raise HTTPException(status_code=404, detail="uploaded file not found")
         return validate_uploaded_path(record.stored_path)

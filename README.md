@@ -2,38 +2,26 @@
 
 多轮对话式施工安全隐患识别专家 Agent。
 
-本项目用于构建一个基于微调 VLM API、YOLO 检测 API、规则检索、记忆管理和报告生成的施工现场安全隐患识别系统。第一版采用按需推理方案：用户上传图片或指定历史图片后，Agent 根据多轮对话意图调用相关视觉工具，并融合证据生成结构化判断和检查报告。
+当前 MVP 主线是 `FastAPI + SQLite + Vite React`，后端使用轻量 Agent 状态机编排工具。系统支持上传施工现场图片后多轮追问：隐患识别、依据解释、整改建议、报告生成、人工复核和标注反哺。
 
 ## 核心能力
 
-- 多轮对话式隐患识别。
-- 调用微调 VLM API 识别四口五临边隐患。
-- 调用 YOLO API 检测人员、安全帽和未佩戴安全帽人员。
-- 基于规则块进行四口五临边规则检索。
-- 融合 VLM、YOLO、规则和历史上下文。
-- 输出结构化 JSON、带框图片和检查报告。
-- 保存会话、图片、工具调用日志和分析结果。
-- 支持人工复核后的标注反哺闭环，将需修正结果生成训练候选数据。
-- 内置四口五临边 API 辅助标注流水线代码，支持后续批量草标和审核台扩展。
+- 多轮对话：同一 `conversation_id` 下复用会话历史、图片历史和最新融合结果。
+- Agent 路由：按用户意图决定从记忆回答，还是调用 VLM、YOLO、规则、整改、报告工具。
+- 视觉工具：微调 VLM API 识别四口五临边隐患，YOLO API 检测人员/安全帽。
+- 规则和证据融合：本地规则块检索，融合 VLM、YOLO、规则和不确定项。
+- SQLite 业务记忆：保存会话、消息、上传文件、工具调用、分析结果、复核、整改、标注样本和训练候选。
+- 轻量前端：Vite React 控制台用于上传图片、发起多轮对话、查看结构化结果和验证闭环。
 
-## 当前边界
-
-本仓库第一版不做 VLM 后台实时视频逐帧巡检。VLM 和 YOLO 都作为外部 API 工具按需调用。Agent 项目不保存模型权重。
-
-标注流水线只用于人工复核、数据沉淀和后续训练数据构造，不会阻塞正常隐患推理流程。
-
-## 推荐目录
+## 目录
 
 ```text
-safety-vision-agent/
-├── backend/          FastAPI 后端和 Agent 工具
-│   └── app/annotation_pipeline/  四口五临边数据标注流水线副本
-├── frontend/         Next.js 前端原型
-├── configs/          配置模板和规则示例
-├── docs/             规划、架构、API 契约和路线图
-├── scripts/          本地辅助脚本
-├── .env.example      环境变量占位，真实值不要提交
-└── .gitignore
+backend/          FastAPI、Agent 状态机、SQLite repository、工具服务
+frontend/         Vite React Agent 控制台
+configs/          规则示例
+docs/             架构、API、路线图和计划
+scripts/          本地辅助说明
+runtime/          本地上传、输出和 SQLite 数据库，默认不提交
 ```
 
 ## 快速开始
@@ -57,42 +45,24 @@ npm install
 npm run dev
 ```
 
-## 必填配置
+默认前端地址是 `http://127.0.0.1:5173`，后端地址是 `http://127.0.0.1:8000`。
 
-真实 API 地址、密钥和规则文件路径都在 `.env` 中填写。仓库只提交 `.env.example`。
+## 配置
+
+`.env.example` 中保留 MVP 所需配置：
 
 ```text
-LLM_API_BASE_URL=
-LLM_API_KEY=
+SQLITE_PATH=runtime/safety_vision_agent.sqlite3
 VLM_API_BASE_URL=
 VLM_API_KEY=
+VLM_MODEL_NAME=
 YOLO_API_BASE_URL=
 YOLO_API_KEY=
-RULE_BLOCKS_PATH=
+RULE_BLOCKS_PATH=configs/rules/four_openings_edges_rule_blocks.example.json
 ```
 
-## 标注反哺闭环
+未配置 VLM/YOLO 时，后端会返回可运行的降级结果，便于本地验证 Agent、多轮记忆和前端闭环。
 
-当前支持从一次分析结果进入标注复核：
+## 已移出 MVP 主线
 
-```text
-分析结果
--> 前端点击“进入标注复核”
--> 后端创建 annotation sample
--> 人工 accept / revise / reject
--> 生成 accepted_records
--> 写入 training_candidates
-```
-
-生成的训练候选记录会保存到数据库，同时写入 `OUTPUT_DIR`：
-
-```text
-runtime/outputs/annotation_feedback/{sample_id}/
-  accepted_records.json
-  images.jsonl
-  objects.jsonl
-```
-
-## GitHub 提交建议
-
-建议使用 private 私有仓库，不要提交真实密钥、真实数据、上传图片、视频或数据库文件。
+SQLAlchemy、Alembic、Celery、Redis、PostgreSQL/psycopg、pydantic-settings、LangGraph checkpoint 和 Next.js 已移出当前运行路径。队列、高并发、PostgreSQL 迁移、向量检索和更完整产品 UI 都作为后续扩展处理。

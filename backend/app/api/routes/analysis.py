@@ -1,75 +1,46 @@
-from celery.result import AsyncResult
-from fastapi import APIRouter, Depends, HTTPException
-from kombu.exceptions import OperationalError
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 
-from app.db.models import FusedResultRecord
-from app.db.repositories import (
-    add_message,
-    attach_celery_task,
-    create_analysis_task,
-    get_or_create_conversation,
-    update_analysis_status,
-)
-from app.db.session import get_db
-from app.models.schemas import AnalysisRequest, AnalysisResponse, AnalysisResultResponse, FusedResult, TaskStatusResponse
-from app.services.file_storage import get_uploaded_image_path
-from app.tasks.analysis_tasks import analyze_image_task
-from app.tasks.celery_app import celery_app
+from app.agents.safety_expert import SafetyExpertAgent
+from app.db.repositories import latest_fused_result
+from app.models.schemas import AnalysisRequest, AnalysisResponse, AnalysisResultResponse, ChatRequest, FusedResult, TaskStatusResponse
 
 
 router = APIRouter()
 
 
 @router.post("", response_model=AnalysisResponse)
-def create_analysis(request: AnalysisRequest, db: Session = Depends(get_db)) -> AnalysisResponse:
-    conversation = get_or_create_conversation(db, request.conversation_id)
-    add_message(db, conversation.id, "user", request.message)
-    image_path = get_uploaded_image_path(db, request.file_id, request.image_path)
-    analysis = create_analysis_task(db, conversation.id, image_path, request.message)
-
-    try:
-        async_result = analyze_image_task.delay(
-            analysis_id=analysis.id,
-            conversation_id=conversation.id,
-            image_path=image_path,
+async def create_analysis(request: AnalysisRequest) -> AnalysisResponse:
+    response = await SafetyExpertAgent().handle(
+        ChatRequest(
+            conversation_id=request.conversation_id,
             message=request.message,
+            file_id=request.file_id,
+            image_path=request.image_path,
             selected_bbox=request.selected_bbox,
         )
-    except (OperationalError, OSError) as exc:
-        update_analysis_status(db, analysis.id, "failed")
-        raise HTTPException(status_code=503, detail=f"analysis queue unavailable: {exc}") from exc
-    attach_celery_task(db, analysis.id, async_result.id)
-
+    )
+    if not response.latest_analysis_id:
+        raise HTTPException(status_code=400, detail=response.answer)
+    status = "failed" if response.errors else "completed"
     return AnalysisResponse(
-        analysis_id=analysis.id,
-        conversation_id=conversation.id,
-        task_id=async_result.id,
-        status="queued",
+        analysis_id=response.latest_analysis_id,
+        conversation_id=response.conversation_id,
+        task_id=response.latest_analysis_id,
+        status=status,
     )
 
 
 @router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
 def get_task_status(task_id: str) -> TaskStatusResponse:
-    result = AsyncResult(task_id, app=celery_app)
-    payload = result.result if isinstance(result.result, dict) else None
-    error = str(result.result) if result.failed() else None
-    return TaskStatusResponse(
-        task_id=task_id,
-        status=result.status.lower(),
-        result=payload,
-        error=error,
-    )
+    record = latest_fused_result(task_id)
+    if not record:
+        return TaskStatusResponse(task_id=task_id, status="failed", error="analysis result not found")
+    return TaskStatusResponse(task_id=task_id, status="completed", result=record.result_json)
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResultResponse)
-def get_analysis_result(analysis_id: str, db: Session = Depends(get_db)) -> AnalysisResultResponse:
-    record = (
-        db.query(FusedResultRecord)
-        .filter(FusedResultRecord.analysis_id == analysis_id)
-        .order_by(FusedResultRecord.created_at.desc())
-        .first()
-    )
+def get_analysis_result(analysis_id: str) -> AnalysisResultResponse:
+    record = latest_fused_result(analysis_id)
     if not record:
         raise HTTPException(status_code=404, detail="analysis result not found")
     return AnalysisResultResponse(

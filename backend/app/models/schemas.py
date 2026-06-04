@@ -5,9 +5,10 @@ from pydantic import BaseModel, Field
 BBox = list[float]
 
 
-class ChatRequest(BaseModel):
+class AgentChatRequest(BaseModel):
     conversation_id: str | None = None
     message: str
+    file_id: str | None = None
     image_path: str | None = None
     selected_bbox: BBox | None = None
 
@@ -61,11 +62,22 @@ class FusedResult(BaseModel):
     recommendations: list[str] = Field(default_factory=list)
 
 
-class ChatResponse(BaseModel):
+class AgentChatResponse(BaseModel):
     conversation_id: str
     answer: str
+    latest_analysis_id: str | None = None
     fused_result: FusedResult | None = None
     tool_calls: list[dict] = Field(default_factory=list)
+    artifacts: dict = Field(default_factory=dict)
+    errors: list[dict] = Field(default_factory=list)
+
+
+class ChatRequest(AgentChatRequest):
+    pass
+
+
+class ChatResponse(AgentChatResponse):
+    pass
 
 
 class UploadedImageResponse(BaseModel):

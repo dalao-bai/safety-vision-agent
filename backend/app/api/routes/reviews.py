@@ -1,16 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 
 from app.db.repositories import create_human_review, latest_fused_result
-from app.db.session import get_db
 from app.models.schemas import FusedResult, ReviewCreateRequest, ReviewResponse
 
 
 router = APIRouter()
 
 
-def _validate_review_target(db: Session, request: ReviewCreateRequest) -> None:
-    record = latest_fused_result(db, request.analysis_id)
+def _validate_review_target(request: ReviewCreateRequest) -> None:
+    record = latest_fused_result(request.analysis_id)
     if not record:
         raise HTTPException(status_code=404, detail="analysis result not found")
 
@@ -28,10 +26,9 @@ def _validate_review_target(db: Session, request: ReviewCreateRequest) -> None:
 
 
 @router.post("", response_model=ReviewResponse)
-def create_review(request: ReviewCreateRequest, db: Session = Depends(get_db)) -> ReviewResponse:
-    _validate_review_target(db, request)
+def create_review(request: ReviewCreateRequest) -> ReviewResponse:
+    _validate_review_target(request)
     review = create_human_review(
-        db=db,
         analysis_id=request.analysis_id,
         item_type=request.item_type,
         item_index=request.item_index,

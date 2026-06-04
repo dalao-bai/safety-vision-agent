@@ -1,22 +1,114 @@
-# API 契约草案
+# API 契约
 
-真实地址和密钥由 `.env` 配置，本仓库不提交真实值。外部 API 必须返回严格 JSON；后端会使用 Pydantic schema 校验返回体。
+真实地址和密钥由 `.env` 配置，本仓库不提交真实值。外部 VLM/YOLO API 必须返回严格 JSON；后端会使用 Pydantic schema 校验返回体。
 
 ## 通用约定
 
 - 鉴权：如果配置了 `*_API_KEY`，Agent 会发送 `Authorization: Bearer <token>`。
-- 坐标：所有 `bbox` 均为像素坐标 `[x1, y1, x2, y2]`，原点在图片左上角，要求 `x1 < x2` 且 `y1 < y2`。
+- 坐标：所有 `bbox` 均为像素坐标 `[x1, y1, x2, y2]`，原点在图片左上角。
 - 置信度：`confidence` 使用 `0.0 - 1.0` 浮点数。
-- 成功响应：HTTP `2xx` + JSON body。
-- 失败响应：HTTP `4xx/5xx` + JSON body，推荐格式如下：
+- MVP 数据库：仅 SQLite，路径由 `SQLITE_PATH` 配置。
+- 主交互：前端优先使用 `POST /api/chat`，旧 task polling 不再是主流程。
+
+## 后端 Agent API
+
+### 上传图片
+
+```text
+POST /api/files/images
+Content-Type: multipart/form-data
+```
+
+响应：
 
 ```json
 {
-  "error": {
-    "code": "invalid_image",
-    "message": "图片无法读取或格式不受支持。"
-  }
+  "file_id": "file_xxx",
+  "filename": "site.jpg",
+  "path": "/abs/runtime/uploads/file_xxx.jpg"
 }
+```
+
+### 多轮 Agent 对话
+
+```text
+POST /api/chat
+```
+
+请求：
+
+```json
+{
+  "conversation_id": null,
+  "file_id": "file_xxx",
+  "image_path": null,
+  "message": "分析这张图有没有隐患",
+  "selected_bbox": null
+}
+```
+
+响应：
+
+```json
+{
+  "conversation_id": "conv_xxx",
+  "answer": "发现 1 处明确隐患...",
+  "latest_analysis_id": "analysis_xxx",
+  "fused_result": {
+    "hazards": [],
+    "detections": [],
+    "uncertain_items": [],
+    "uncertain_followups": [],
+    "summary": "未形成明确隐患结论。",
+    "recommendations": []
+  },
+  "tool_calls": [
+    {
+      "tool": "vlm_hazard_analysis_tool",
+      "status": "ok",
+      "input": {},
+      "output": {},
+      "latency_ms": 12.3
+    }
+  ],
+  "artifacts": {},
+  "errors": []
+}
+```
+
+同一 `conversation_id` 下的追问可以不带 `file_id`，例如“刚才第 2 个隐患依据是什么？”会优先读取 SQLite 中的最新融合结果，不重新调用 VLM/YOLO。
+
+### 兼容分析接口
+
+```text
+POST /api/analysis
+GET /api/analysis/{analysis_id}
+GET /api/analysis/tasks/{task_id}
+```
+
+这些接口仅保留兼容能力，内部仍走 inline Agent，不再导入 Celery、Redis 或队列任务。
+
+### 人工复核
+
+```text
+POST /api/reviews
+```
+
+### 整改任务
+
+```text
+POST /api/remediations
+POST /api/remediations/{task_id}/evidence
+POST /api/remediations/{task_id}/verify
+```
+
+### 标注反哺
+
+```text
+POST /api/annotations/from-analysis
+GET /api/annotations/samples/{sample_id}
+PATCH /api/annotations/samples/{sample_id}/review
+POST /api/annotations/samples/{sample_id}/commit
 ```
 
 ## 微调 VLM API
@@ -34,16 +126,6 @@
   }
 }
 ```
-
-字段说明：
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `image_path` | string | 是 | Agent 后端保存的图片路径，具体可由模型服务按部署方式读取或映射。 |
-| `question` | string | 是 | 本轮用户问题或 Agent 构造的分析指令。 |
-| `candidate_rules` | array[object] | 是 | 候选四口五临边规则块。 |
-| `target_bbox` | array[number] 或 null | 否 | 用户指定局部区域；为空表示分析整图。 |
-| `context.scene` | string | 是 | 固定为 `four_openings_edges`。 |
 
 ### 响应
 
@@ -69,67 +151,9 @@
 }
 ```
 
-### VLM 允许值
-
-`object_id` 只能取：
-
-```text
-stair_opening_protection
-elevator_shaft_protection
-reserved_opening_protection
-passage_entrance_protection
-balcony_edge_protection
-roof_edge_protection
-floor_edge_protection
-foundation_pit_edge_protection
-ramp_edge_protection
-```
-
-`status` 只能取：
-
-```text
-confirmed_hazard
-safe
-uncertain
-```
-
-`hazard_type_id` 在 `status = confirmed_hazard` 时填写，只能取：
-
-```text
-missing_protection
-discontinuous_protection
-temporary_substitute
-unfixed_or_weak_protection
-opening_uncovered
-cover_unfixed_or_insufficient
-door_open_or_missing
-canopy_missing_or_invalid
-```
-
-`uncertainty_reason` 在 `status = uncertain` 时填写，只能取：
-
-```text
-protective_component_not_visible
-visual_rule_evidence_insufficient
-external_context_required
-```
-
-`evidence_sufficiency` 只能取：
-
-```text
-sufficient
-insufficient
-```
-
-字段一致性要求：
-
-- `confirmed_hazard`：`hazard_type_id`、`hazard_type`、`visual_evidence`、`rule` 必须有值；`missing_evidence` 和 `uncertainty_reason` 应为 `null`。
-- `safe`：`hazard_type_id`、`hazard_type`、`missing_evidence`、`uncertainty_reason` 应为 `null`。
-- `uncertain`：`hazard_type_id`、`hazard_type` 应为 `null`；`missing_evidence`、`uncertainty_reason` 必须有值；`evidence_sufficiency` 应为 `insufficient`。
+`status` 允许值：`confirmed_hazard`、`safe`、`uncertain`。
 
 ## YOLO 检测 API
-
-Agent 只接受 YOLO API，不在本项目中保存或加载 YOLO 权重。
 
 ### 请求
 
@@ -140,14 +164,6 @@ Agent 只接受 YOLO API，不在本项目中保存或加载 YOLO 权重。
   "confidence_threshold": 0.25
 }
 ```
-
-字段说明：
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `image_path` | string | 是 | Agent 后端保存的图片路径，具体可由 YOLO 服务按部署方式读取或映射。 |
-| `tasks` | array[string] | 是 | 当前固定请求 `person`、`helmet`、`no_helmet`。 |
-| `confidence_threshold` | number | 是 | 检测置信度阈值。 |
 
 ### 响应
 
@@ -168,214 +184,4 @@ Agent 只接受 YOLO API，不在本项目中保存或加载 YOLO 权重。
 }
 ```
 
-### YOLO 允许值
-
-`label` 只能取：
-
-```text
-person
-helmet
-no_helmet
-```
-
-`summary` 至少包含：
-
-```text
-person_count
-helmet_count
-no_helmet_count
-```
-
-如果没有检测结果，返回：
-
-```json
-{
-  "detections": [],
-  "summary": {
-    "person_count": 0,
-    "helmet_count": 0,
-    "no_helmet_count": 0
-  }
-}
-```
-
-## 后端接口
-
-### 上传图片
-
-```text
-POST /api/files/images
-```
-
-### 创建分析任务
-
-```text
-POST /api/analysis
-```
-
-### 查询任务状态
-
-```text
-GET /api/analysis/tasks/{task_id}
-```
-
-### 查询分析结果
-
-```text
-GET /api/analysis/{analysis_id}
-```
-
-### 人工复核
-
-```text
-POST /api/reviews
-```
-
-### 从分析结果创建标注复核样本
-
-```text
-POST /api/annotations/from-analysis
-```
-
-请求：
-
-```json
-{
-  "analysis_id": "analysis_xxx",
-  "reviewer": null,
-  "reason": "model_output_needs_revision",
-  "note": "前端标记需修正，进入标注反哺闭环。"
-}
-```
-
-响应：
-
-```json
-{
-  "sample_id": "annsample_xxx",
-  "batch_id": "annbatch_xxx",
-  "analysis_id": "analysis_xxx",
-  "image_path": "uploads/example.jpg",
-  "status": "pending_review",
-  "draft_json": {},
-  "review_json": {},
-  "accepted_record_json": {},
-  "created_at": "2026-06-03T00:00:00"
-}
-```
-
-### 查询标注样本
-
-```text
-GET /api/annotations/samples/{sample_id}
-```
-
-### 保存标注复核
-
-```text
-PATCH /api/annotations/samples/{sample_id}/review
-```
-
-请求：
-
-```json
-{
-  "reviewer": null,
-  "image_decision": "accept",
-  "review_status": "reviewed",
-  "objects": [
-    {
-      "draft_object_index": 1,
-      "decision": "revise",
-      "revised": {
-        "object_id": "floor_edge_protection",
-        "object_name": "楼层临边防护",
-        "bbox": [120, 80, 780, 620],
-        "status": "confirmed_hazard",
-        "hazard_type_id": "missing_protection",
-        "hazard_type": "防护缺失",
-        "visual_evidence": "人工修正后的可见证据。",
-        "missing_evidence": null,
-        "evidence_sufficiency": "sufficient",
-        "uncertainty_reason": null,
-        "rule": "楼层临边应设置防护栏杆或其他防坠落措施。"
-      },
-      "note": "修正 bbox 和证据描述。"
-    }
-  ],
-  "note": "人工复核完成。"
-}
-```
-
-`decision` 只能取：
-
-```text
-pending
-accept
-revise
-reject
-```
-
-### 生成训练候选
-
-```text
-POST /api/annotations/samples/{sample_id}/commit
-```
-
-请求：
-
-```json
-{
-  "candidate_type": "sft",
-  "append_to_db": false
-}
-```
-
-响应：
-
-```json
-{
-  "sample_id": "annsample_xxx",
-  "status": "committed",
-  "accepted_images": 1,
-  "accepted_objects": 1,
-  "training_candidate_id": "traincand_xxx",
-  "accepted_record_json": {
-    "images": [],
-    "objects": [],
-    "errors": []
-  }
-}
-```
-
-后端会同时写出：
-
-```text
-outputs/annotation_feedback/{sample_id}/accepted_records.json
-outputs/annotation_feedback/{sample_id}/images.jsonl
-outputs/annotation_feedback/{sample_id}/objects.jsonl
-```
-
-### 创建整改任务
-
-```text
-POST /api/remediations
-```
-
-### 上传整改证据
-
-```text
-POST /api/remediations/{task_id}/evidence
-```
-
-### 复核整改结果
-
-```text
-POST /api/remediations/{task_id}/verify
-```
-
-### 生成报告
-
-```text
-POST /api/reports
-```
+`label` 允许值：`person`、`helmet`、`no_helmet`。

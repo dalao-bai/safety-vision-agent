@@ -1,14 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 
-from app.db.models import RemediationTask
 from app.db.repositories import (
     add_remediation_evidence,
     create_remediation_task,
+    get_remediation_task,
     latest_fused_result,
     update_remediation_status,
 )
-from app.db.session import get_db
 from app.models.schemas import (
     FusedResult,
     RemediationCreateRequest,
@@ -21,8 +19,8 @@ from app.models.schemas import (
 router = APIRouter()
 
 
-def _validate_hazard_target(db: Session, request: RemediationCreateRequest) -> None:
-    record = latest_fused_result(db, request.analysis_id)
+def _validate_hazard_target(request: RemediationCreateRequest) -> None:
+    record = latest_fused_result(request.analysis_id)
     if not record:
         raise HTTPException(status_code=404, detail="analysis result not found")
     fused = FusedResult.model_validate(record.result_json)
@@ -31,10 +29,9 @@ def _validate_hazard_target(db: Session, request: RemediationCreateRequest) -> N
 
 
 @router.post("", response_model=RemediationResponse)
-def create_remediation(request: RemediationCreateRequest, db: Session = Depends(get_db)) -> RemediationResponse:
-    _validate_hazard_target(db, request)
+def create_remediation(request: RemediationCreateRequest) -> RemediationResponse:
+    _validate_hazard_target(request)
     task = create_remediation_task(
-        db=db,
         conversation_id=request.conversation_id,
         analysis_id=request.analysis_id,
         hazard_index=request.hazard_index,
@@ -54,26 +51,18 @@ def create_remediation(request: RemediationCreateRequest, db: Session = Depends(
 
 
 @router.post("/{task_id}/evidence")
-def submit_remediation_evidence(
-    task_id: str,
-    request: RemediationEvidenceRequest,
-    db: Session = Depends(get_db),
-) -> dict[str, str]:
-    task = db.get(RemediationTask, task_id)
+def submit_remediation_evidence(task_id: str, request: RemediationEvidenceRequest) -> dict[str, str]:
+    task = get_remediation_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="remediation task not found")
-    evidence = add_remediation_evidence(db, task=task, image_path=request.image_path, note=request.note)
+    evidence = add_remediation_evidence(task_id=task_id, image_path=request.image_path, note=request.note)
     return {"evidence_id": evidence.id, "task_id": task_id, "status": "submitted"}
 
 
 @router.post("/{task_id}/verify", response_model=RemediationResponse)
-def verify_remediation(
-    task_id: str,
-    request: RemediationVerifyRequest,
-    db: Session = Depends(get_db),
-) -> RemediationResponse:
+def verify_remediation(task_id: str, request: RemediationVerifyRequest) -> RemediationResponse:
     status = "verified" if request.decision == "accept" else "rejected"
-    task = update_remediation_status(db, task_id=task_id, status=status)
+    task = update_remediation_status(task_id=task_id, status=status)
     if not task:
         raise HTTPException(status_code=404, detail="remediation task not found")
     return RemediationResponse(

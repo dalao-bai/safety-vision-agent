@@ -1,12 +1,10 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.core.config import get_settings
 from app.db.repositories import add_uploaded_file
-from app.db.session import get_db
 from app.models.schemas import UploadedImageResponse
 from app.services.file_storage import resolve_upload_target
 
@@ -18,7 +16,7 @@ ALLOWED_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/bmp"
 
 
 @router.post("/images", response_model=UploadedImageResponse)
-async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_db)) -> UploadedImageResponse:
+async def upload_image(file: UploadFile = File(...)) -> UploadedImageResponse:
     settings = get_settings()
     suffix = Path(file.filename or "image").suffix.lower() or ".jpg"
     if suffix not in ALLOWED_IMAGE_SUFFIXES:
@@ -36,7 +34,6 @@ async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_d
     target.write_bytes(data)
 
     record = add_uploaded_file(
-        db=db,
         original_name=file.filename or target.name,
         stored_path=target.as_posix(),
         mime_type=file.content_type,
