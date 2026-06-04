@@ -15,7 +15,9 @@ async def create_analysis(request: AnalysisRequest) -> AnalysisResponse:
             conversation_id=request.conversation_id,
             message=request.message,
             file_id=request.file_id,
+            file_ids=request.file_ids,
             image_path=request.image_path,
+            image_paths=request.image_paths,
             selected_bbox=request.selected_bbox,
         )
     )

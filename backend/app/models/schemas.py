@@ -9,7 +9,9 @@ class AgentChatRequest(BaseModel):
     conversation_id: str | None = None
     message: str
     file_id: str | None = None
+    file_ids: list[str] = Field(default_factory=list)
     image_path: str | None = None
+    image_paths: list[str] = Field(default_factory=list)
     selected_bbox: BBox | None = None
 
 
@@ -26,6 +28,12 @@ class HazardObject(BaseModel):
     uncertainty_reason: str | None = None
     rule: str
     confidence: float | None = None
+    source_file_id: str | None = None
+    source_analysis_id: str | None = None
+    source_label: str | None = None
+    risk_score: int | None = None
+    risk_level: str | None = None
+    risk_reasons: list[str] = Field(default_factory=list)
 
 
 class UncertaintyFollowUp(BaseModel):
@@ -46,6 +54,9 @@ class Detection(BaseModel):
     label: str
     bbox: BBox
     confidence: float
+    source_file_id: str | None = None
+    source_analysis_id: str | None = None
+    source_label: str | None = None
 
 
 class YOLODetectionResult(BaseModel):
@@ -89,7 +100,9 @@ class UploadedImageResponse(BaseModel):
 class AnalysisRequest(BaseModel):
     conversation_id: str | None = None
     file_id: str | None = None
+    file_ids: list[str] = Field(default_factory=list)
     image_path: str | None = None
+    image_paths: list[str] = Field(default_factory=list)
     message: str = "分析这张图中的施工安全隐患。"
     selected_bbox: BBox | None = None
 

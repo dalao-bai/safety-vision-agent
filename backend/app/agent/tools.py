@@ -16,12 +16,28 @@ from app.services.vlm_client import VLMClient
 from app.services.yolo_detector import YOLOHelmetDetector
 
 
+def _summarize_output(output_json: dict) -> dict:
+    summary: dict[str, Any] = {}
+    if "summary" in output_json:
+        summary["summary"] = output_json["summary"]
+    if "hazards" in output_json:
+        summary["hazard_count"] = len(output_json.get("hazards") or [])
+    if "uncertain_items" in output_json:
+        summary["uncertain_count"] = len(output_json.get("uncertain_items") or [])
+    if "detections" in output_json:
+        summary["detection_count"] = len(output_json.get("detections") or [])
+    if "error" in output_json:
+        summary["error"] = output_json["error"]
+    return summary or output_json
+
+
 def _call_payload(record) -> dict:
     return {
         "tool": record.tool_name,
         "status": record.status,
         "input": record.input_json,
-        "output": record.output_json,
+        "output": _summarize_output(record.output_json),
+        "observation": _summarize_output(record.output_json),
         "latency_ms": record.latency_ms,
     }
 
@@ -159,6 +175,136 @@ async def run_image_analysis_tool(
     }
 
 
+def _with_source(value: Any, source: dict) -> dict:
+    item = value.model_dump() if hasattr(value, "model_dump") else dict(value)
+    return {
+        **item,
+        "source_file_id": source.get("file_id"),
+        "source_analysis_id": source.get("analysis_id"),
+        "source_label": source.get("source_label"),
+    }
+
+
+async def run_multi_image_analysis_tool(
+    conversation_id: str,
+    message: str,
+    file_ids: list[str],
+    image_paths: list[str],
+    selected_bbox: list[float] | None,
+) -> dict:
+    image_refs = [{"file_id": file_id, "image_path": None} for file_id in file_ids]
+    image_refs.extend({"file_id": None, "image_path": image_path} for image_path in image_paths)
+    if not image_refs:
+        return {"error": "image_required", "tool_calls": []}
+
+    analyses: list[dict] = []
+    tool_calls: list[dict] = []
+    combined = {
+        "hazards": [],
+        "detections": [],
+        "uncertain_items": [],
+        "uncertain_followups": [],
+        "summary": "",
+        "recommendations": [],
+    }
+
+    for index, ref in enumerate(image_refs, start=1):
+        source_label = f"图片 {index}"
+        result = await run_image_analysis_tool(
+            conversation_id=conversation_id,
+            message=message,
+            file_id=ref["file_id"],
+            image_path=ref["image_path"],
+            selected_bbox=selected_bbox,
+        )
+        analysis_id = result.get("analysis_id")
+        source = {"file_id": ref["file_id"], "analysis_id": analysis_id, "source_label": source_label}
+        tool_calls.extend(result.get("tool_calls", []))
+        analyses.append(
+            {
+                "source_label": source_label,
+                "file_id": ref["file_id"],
+                "image_path": result.get("image_path") or ref["image_path"],
+                "analysis_id": analysis_id,
+                "error": result.get("error"),
+            }
+        )
+        fused = result.get("fused_result")
+        if not fused:
+            continue
+        fused_json = fused.model_dump() if hasattr(fused, "model_dump") else fused
+        combined["hazards"].extend(_with_source(item, source) for item in fused_json.get("hazards", []))
+        combined["detections"].extend(_with_source(item, source) for item in fused_json.get("detections", []))
+        combined["uncertain_items"].extend(_with_source(item, source) for item in fused_json.get("uncertain_items", []))
+        combined["uncertain_followups"].extend(fused_json.get("uncertain_followups", []))
+        combined["recommendations"].extend(fused_json.get("recommendations", []))
+
+    hazard_count = len(combined["hazards"])
+    uncertain_count = len(combined["uncertain_items"])
+    combined["summary"] = f"共分析 {len(image_refs)} 张图片，发现 {hazard_count} 个明确隐患，{uncertain_count} 个证据不足项。"
+    combined["recommendations"] = list(dict.fromkeys(combined["recommendations"]))
+    aggregate = repositories.create_analysis_task(conversation_id, "aggregate:multi-image", message, status="running")
+    repositories.save_fused_result(aggregate.id, combined)
+    return {
+        "analysis_id": aggregate.id,
+        "analyses": analyses,
+        "fused_result": FusedResult.model_validate(combined),
+        "tool_calls": tool_calls,
+    }
+
+
+def memory_lookup_tool(conversation_id: str) -> dict:
+    context = latest_result_context(conversation_id)
+    if not context:
+        return {}
+    return {
+        "analysis": context["analysis"],
+        "fused_result": context["result"].model_dump(),
+        "tool_calls": [],
+    }
+
+
+def score_risk_tool(fused_result: dict) -> dict:
+    hazards = []
+    for hazard in fused_result.get("hazards") or []:
+        confidence = hazard.get("confidence")
+        score = 50
+        reasons = ["基础隐患风险"]
+        hazard_type = str(hazard.get("hazard_type") or hazard.get("hazard_type_id") or "")
+        visual = str(hazard.get("visual_evidence") or "")
+        rule = str(hazard.get("rule") or "")
+        if any(keyword in hazard_type + visual + rule for keyword in ["临边", "洞口", "坠落", "防护"]):
+            score += 20
+            reasons.append("涉及临边/洞口/坠落防护")
+        if any(keyword in visual for keyword in ["人员", "工人", "靠近", "作业"]):
+            score += 15
+            reasons.append("可见人员接近风险区域")
+        if confidence is not None:
+            if confidence >= 0.8:
+                score += 10
+                reasons.append("证据置信度较高")
+            elif confidence < 0.5:
+                score -= 15
+                reasons.append("证据置信度偏低")
+        if hazard.get("evidence_sufficiency") == "insufficient":
+            score -= 20
+            reasons.append("证据不足，降低确认优先级")
+        score = max(0, min(100, score))
+        if score >= 85:
+            level = "critical"
+        elif score >= 65:
+            level = "high"
+        elif score >= 40:
+            level = "medium"
+        else:
+            level = "low"
+        hazards.append({**hazard, "risk_score": score, "risk_level": level, "risk_reasons": reasons})
+
+    hazards.sort(key=lambda item: (item.get("risk_score") or 0, item.get("confidence") or 0), reverse=True)
+    scored = {**fused_result, "hazards": hazards}
+    return {"fused_result": scored, "tool_calls": []}
+
+
 def answer_rule_basis_tool(conversation_id: str, message: str) -> dict:
     hazard_context = hazard_by_index(conversation_id, message)
     if not hazard_context or hazard_context.get("error"):
@@ -187,11 +333,11 @@ def create_remediation_tool(conversation_id: str, message: str) -> dict:
     return {**hazard_context, "remediation_task": dict(task)}
 
 
-def generate_report_tool(conversation_id: str) -> dict:
+def generate_report_tool(conversation_id: str, fused_result: dict | None = None) -> dict:
     context = latest_result_context(conversation_id)
     if not context:
         return {}
-    result = FusedResult.model_validate(context["fused_result"])
+    result = FusedResult.model_validate(fused_result or context["fused_result"])
     report = ReportGenerator().generate(ReportRequest(conversation_id=conversation_id, fused_result=result))
     record = repositories.create_report(conversation_id, context["analysis"]["id"], report.title, report.markdown)
     return {"report": report.model_dump(), "report_record": dict(record), "analysis": context["analysis"], "fused_result": result.model_dump()}

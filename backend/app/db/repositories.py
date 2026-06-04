@@ -219,6 +219,12 @@ def save_analysis_results(analysis_id: str, vlm_json: dict, yolo_json: dict, fus
         connection.execute("UPDATE analysis_tasks SET status = ?, updated_at = ? WHERE id = ?", ("completed", _now(), analysis_id))
 
 
+def save_fused_result(analysis_id: str, fused_json: dict, db=None) -> None:
+    with connection_scope() as connection:
+        _insert(connection, "fused_results", {"id": new_id("fused"), "analysis_id": analysis_id, "result_json": _dump(fused_json), "created_at": _now()})
+        connection.execute("UPDATE analysis_tasks SET status = ?, updated_at = ? WHERE id = ?", ("completed", _now(), analysis_id))
+
+
 def latest_fused_result(analysis_id: str, db=None) -> Record | None:
     with connection_scope() as connection:
         return _record(

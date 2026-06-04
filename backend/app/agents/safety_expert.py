@@ -11,7 +11,9 @@ class SafetyExpertAgent:
                 "conversation_id": request.conversation_id,
                 "user_message": request.message,
                 "file_id": getattr(request, "file_id", None),
+                "file_ids": getattr(request, "file_ids", []),
                 "image_path": request.image_path,
+                "image_paths": getattr(request, "image_paths", []),
                 "selected_bbox": request.selected_bbox,
             }
         )
