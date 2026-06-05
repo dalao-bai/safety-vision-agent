@@ -1,232 +1,77 @@
-from datetime import datetime
-from pydantic import BaseModel, Field
+"""Shared domain schemas for the v0.1 Agent (U3).
+
+These Pydantic models define the contract enforced at backend boundaries:
+VLM structured output, Agent tool results, and the chat API response. The
+TypeScript mirror lives in frontend/src/types.ts and must stay aligned.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
-BBox = list[float]
+class RiskLevel(str, Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
 
 
-class AgentChatRequest(BaseModel):
-    conversation_id: str | None = None
-    message: str
-    file_id: str | None = None
-    file_ids: list[str] = Field(default_factory=list)
-    image_path: str | None = None
-    image_paths: list[str] = Field(default_factory=list)
-    selected_bbox: BBox | None = None
+class Hazard(BaseModel):
+    """One detected or suspected construction-site hazard."""
+
+    name: str
+    location: str
+    risk_level: RiskLevel
+    basis: str
+    remediation: str
+    confidence: float = Field(..., ge=0.0, le=1.0)
 
 
-class HazardObject(BaseModel):
-    object_id: str
-    object_name: str
-    bbox: BBox
+class AnalysisResult(BaseModel):
+    """Structured hazard analysis returned by the VLM and stored per conversation."""
+
+    summary: str
+    hazards: list[Hazard] = Field(default_factory=list)
+    needs_followup: bool = False
+    followup_question: str | None = None
+
+    @field_validator("followup_question")
+    @classmethod
+    def _followup_consistency(cls, v: str | None, info) -> str | None:
+        # If the model says it needs follow-up, it must say what it needs.
+        if info.data.get("needs_followup") and not v:
+            raise ValueError(
+                "followup_question is required when needs_followup is true"
+            )
+        return v
+
+
+class ToolCallSummary(BaseModel):
+    """Lightweight tool-call record surfaced to the frontend for local inspection."""
+
+    tool_name: str
     status: str
-    hazard_type_id: str | None = None
-    hazard_type: str | None = None
-    visual_evidence: str
-    missing_evidence: str | None = None
-    evidence_sufficiency: str = "sufficient"
-    uncertainty_reason: str | None = None
-    rule: str
-    confidence: float | None = None
-    source_file_id: str | None = None
-    source_analysis_id: str | None = None
-    source_label: str | None = None
-    risk_score: int | None = None
-    risk_level: str | None = None
-    risk_reasons: list[str] = Field(default_factory=list)
+    input: dict[str, Any] | None = None
+    output: dict[str, Any] | None = None
+    error: str | None = None
+    duration_ms: int | None = None
 
 
-class UncertaintyFollowUp(BaseModel):
-    object_name: str
-    bbox: BBox | None = None
-    uncertainty_reason: str
-    missing_evidence: str
-    follow_up_question: str
-    capture_suggestion: str
+class ChatResponse(BaseModel):
+    """Response shape for the main conversation endpoint."""
 
-
-class VLMAnalysisResult(BaseModel):
-    objects: list[HazardObject] = Field(default_factory=list)
-    summary: str = ""
-
-
-class Detection(BaseModel):
-    label: str
-    bbox: BBox
-    confidence: float
-    source_file_id: str | None = None
-    source_analysis_id: str | None = None
-    source_label: str | None = None
-
-
-class YOLODetectionResult(BaseModel):
-    detections: list[Detection] = Field(default_factory=list)
-    summary: dict[str, int] = Field(default_factory=dict)
-
-
-class FusedResult(BaseModel):
-    hazards: list[HazardObject] = Field(default_factory=list)
-    detections: list[Detection] = Field(default_factory=list)
-    uncertain_items: list[HazardObject] = Field(default_factory=list)
-    uncertain_followups: list[UncertaintyFollowUp] = Field(default_factory=list)
-    summary: str = ""
-    recommendations: list[str] = Field(default_factory=list)
-
-
-class AgentChatResponse(BaseModel):
     conversation_id: str
     answer: str
-    latest_analysis_id: str | None = None
-    fused_result: FusedResult | None = None
-    tool_calls: list[dict] = Field(default_factory=list)
-    artifacts: dict = Field(default_factory=dict)
-    errors: list[dict] = Field(default_factory=list)
+    analysis: AnalysisResult | None = None
+    tool_calls: list[ToolCallSummary] = Field(default_factory=list)
 
 
-class ChatRequest(AgentChatRequest):
-    pass
+class ApiError(BaseModel):
+    """Controlled error body returned to the frontend."""
 
-
-class ChatResponse(AgentChatResponse):
-    pass
-
-
-class UploadedImageResponse(BaseModel):
-    file_id: str
-    filename: str
-    path: str
-
-
-class AnalysisRequest(BaseModel):
-    conversation_id: str | None = None
-    file_id: str | None = None
-    file_ids: list[str] = Field(default_factory=list)
-    image_path: str | None = None
-    image_paths: list[str] = Field(default_factory=list)
-    message: str = "分析这张图中的施工安全隐患。"
-    selected_bbox: BBox | None = None
-
-
-class AnalysisResponse(BaseModel):
-    analysis_id: str
-    conversation_id: str
-    task_id: str
-    status: str
-
-
-class TaskStatusResponse(BaseModel):
-    task_id: str
-    status: str
-    result: dict | None = None
-    error: str | None = None
-
-
-class AnalysisResultResponse(BaseModel):
-    analysis_id: str
-    status: str
-    result: FusedResult | None = None
-
-
-class ReviewCreateRequest(BaseModel):
-    analysis_id: str
-    item_type: str = "hazard"
-    item_index: int
-    decision: str
-    reviewer: str | None = None
-    revised_json: dict = Field(default_factory=dict)
-    note: str = ""
-
-
-class ReviewResponse(BaseModel):
-    review_id: str
-    analysis_id: str
-    decision: str
-    note: str = ""
-
-
-class RemediationCreateRequest(BaseModel):
-    conversation_id: str | None = None
-    analysis_id: str
-    hazard_index: int
-    title: str
-    recommendation: str
-    responsible_person: str | None = None
-    due_at: datetime | None = None
-    hazard_json: dict = Field(default_factory=dict)
-
-
-class RemediationResponse(BaseModel):
-    task_id: str
-    analysis_id: str
-    status: str
-    title: str
-    recommendation: str
-
-
-class RemediationEvidenceRequest(BaseModel):
-    image_path: str
-    note: str = ""
-
-
-class RemediationVerifyRequest(BaseModel):
-    decision: str
-    note: str = ""
-
-
-class ReportRequest(BaseModel):
-    conversation_id: str
-    title: str = "施工现场安全隐患识别报告"
-    fused_result: FusedResult | None = None
-
-
-class ReportResponse(BaseModel):
-    title: str
-    markdown: str
-
-
-class AnnotationObjectReview(BaseModel):
-    draft_object_index: int
-    decision: str = "pending"
-    revised: dict = Field(default_factory=dict)
-    note: str = ""
-
-
-class AnnotationFromAnalysisRequest(BaseModel):
-    analysis_id: str
-    reviewer: str | None = None
-    reason: str = "model_output_needs_revision"
-    note: str = ""
-
-
-class AnnotationSampleResponse(BaseModel):
-    sample_id: str
-    batch_id: str | None = None
-    analysis_id: str | None = None
-    image_path: str
-    status: str
-    draft_json: dict = Field(default_factory=dict)
-    review_json: dict = Field(default_factory=dict)
-    accepted_record_json: dict = Field(default_factory=dict)
-    created_at: datetime | None = None
-
-
-class AnnotationReviewUpdateRequest(BaseModel):
-    reviewer: str | None = None
-    image_decision: str = "accept"
-    review_status: str = "reviewed"
-    objects: list[AnnotationObjectReview] = Field(default_factory=list)
-    note: str = ""
-
-
-class AnnotationCommitRequest(BaseModel):
-    candidate_type: str = "sft"
-    append_to_db: bool = False
-
-
-class AnnotationCommitResponse(BaseModel):
-    sample_id: str
-    status: str
-    accepted_images: int
-    accepted_objects: int
-    training_candidate_id: str | None = None
-    accepted_record_json: dict = Field(default_factory=dict)
+    error: str
+    detail: str | None = None

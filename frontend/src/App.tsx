@@ -1,166 +1,153 @@
-import { FormEvent, useMemo, useState } from "react";
+import { useState, useRef } from "react";
+import type { FormEvent } from "react";
+import { sendChat, ApiError } from "./api";
+import type { AnalysisResult, ChatResponse, ToolCallSummary } from "./types";
 
-import {
-  AgentChatResponse,
-  ChatMessage,
-  FusedResult,
-  createAnnotationSample,
-  createRemediation,
-  sendAgentMessage,
-  uploadImage
-} from "./api";
-
-function ResultPanel({ result, analysisId, conversationId, onNotice }: {
-  result: FusedResult | null;
-  analysisId: string | null;
-  conversationId: string | null;
-  onNotice: (message: string) => void;
-}) {
-  async function handleAnnotation() {
-    if (!analysisId) return;
-    const sample = await createAnnotationSample(analysisId);
-    onNotice(`已创建标注样本：${sample.sample_id}`);
-  }
-
-  async function handleRemediation(index: number) {
-    if (!analysisId || !result) return;
-    const task = await createRemediation({ analysisId, conversationId, hazard: result.hazards[index], index });
-    onNotice(`已创建整改任务：${task.task_id}`);
-  }
-
-  if (!result) {
-    return <div className="emptyState">暂无结构化结果</div>;
-  }
-
-  return (
-    <div className="resultStack">
-      <section>
-        <h2>结构化结果</h2>
-        <p>{result.summary}</p>
-      </section>
-      <section>
-        <h3>明确隐患</h3>
-        {result.hazards.length === 0 ? <p className="muted">暂无明确隐患</p> : result.hazards.map((hazard, index) => (
-          <article className="resultItem" key={`${hazard.object_name}-${index}`}>
-            <strong>{index + 1}. {hazard.object_name}</strong>
-            <span>{hazard.hazard_type || hazard.status}</span>
-            <p>{hazard.visual_evidence}</p>
-            <small>{hazard.rule}</small>
-            <button type="button" onClick={() => handleRemediation(index)} disabled={!analysisId}>创建整改</button>
-          </article>
-        ))}
-      </section>
-      <section>
-        <h3>补证建议</h3>
-        {result.uncertain_followups.length === 0 ? <p className="muted">暂无补证项</p> : result.uncertain_followups.map((item, index) => (
-          <article className="resultItem" key={`${item.object_name}-${index}`}>
-            <strong>{item.object_name}</strong>
-            <p>{item.follow_up_question}</p>
-            <small>{item.capture_suggestion}</small>
-          </article>
-        ))}
-      </section>
-      <button className="secondaryButton" type="button" onClick={handleAnnotation} disabled={!analysisId}>生成标注样本</button>
-    </div>
-  );
+interface TranscriptEntry {
+  role: "user" | "assistant";
+  content: string;
 }
 
+const RISK_LABEL: Record<string, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  critical: "严重",
+};
+
 export default function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "上传图片后，可以直接多轮追问隐患、依据、整改和报告。" }
-  ]);
-  const [question, setQuestion] = useState("分析这张图有没有施工安全隐患。");
-  const [fileId, setFileId] = useState<string | null>(null);
-  const [fileName, setFileName] = useState("");
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [message, setMessage] = useState("");
+  const [image, setImage] = useState<File | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [analysisId, setAnalysisId] = useState<string | null>(null);
-  const [latestResult, setLatestResult] = useState<FusedResult | null>(null);
-  const [toolCalls, setToolCalls] = useState<AgentChatResponse["tool_calls"]>([]);
-  const [busy, setBusy] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [toolCalls, setToolCalls] = useState<ToolCallSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canSubmit = useMemo(() => question.trim().length > 0 && !busy, [busy, question]);
+  const canSubmit = message.trim().length > 0 && !loading;
 
-  function append(role: ChatMessage["role"], content: string) {
-    setMessages((items) => [...items, { role, content }]);
-  }
-
-  async function handleUpload(file: File | null) {
-    if (!file) return;
-    setBusy(true);
-    try {
-      const payload = await uploadImage(file);
-      setFileId(payload.file_id);
-      setFileName(payload.filename);
-      append("assistant", `已上传：${payload.filename}`);
-    } catch (error) {
-      append("assistant", error instanceof Error ? error.message : "上传失败");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
     if (!canSubmit) return;
-    const message = question.trim();
-    append("user", message);
-    setBusy(true);
+
+    const sentMessage = message.trim();
+    setTranscript((t) => [...t, { role: "user", content: sentMessage }]);
+    setMessage("");
+    setError(null);
+    setLoading(true);
+
     try {
-      const response = await sendAgentMessage({ conversationId, fileId, message });
-      setConversationId(response.conversation_id);
-      setAnalysisId(response.latest_analysis_id);
-      setLatestResult(response.fused_result);
-      setToolCalls(response.tool_calls);
-      append("assistant", response.answer);
-    } catch (error) {
-      append("assistant", error instanceof Error ? error.message : "Agent 请求失败");
+      const resp: ChatResponse = await sendChat({
+        message: sentMessage,
+        conversationId,
+        image,
+      });
+      setConversationId(resp.conversation_id);
+      setTranscript((t) => [...t, { role: "assistant", content: resp.answer }]);
+      if (resp.analysis) setAnalysis(resp.analysis);
+      setToolCalls(resp.tool_calls ?? []);
+      // Image is consumed by the first turn; clear it for follow-ups.
+      setImage(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "网络错误,请重试。";
+      setError(msg);
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   }
 
   return (
-    <main className="shell">
-      <aside className="leftPane">
-        <h1>Safety Vision Agent</h1>
-        <label className="uploadBox">
-          <span>上传现场图片</span>
-          <input aria-label="上传现场图片" type="file" accept="image/*" onChange={(event) => handleUpload(event.target.files?.[0] ?? null)} />
-        </label>
-        <dl className="metaList">
-          <dt>图片</dt>
-          <dd>{fileName || "未上传"}</dd>
-          <dt>会话</dt>
-          <dd>{conversationId || "未开始"}</dd>
-          <dt>分析</dt>
-          <dd>{analysisId || "暂无"}</dd>
-        </dl>
-      </aside>
+    <div className="app">
+      <header className="app-header">
+        <h1>工地安全隐患识别 Agent</h1>
+        <p className="subtitle">上传施工现场照片,识别安全隐患并追问依据、排序与整改建议。</p>
+      </header>
 
-      <section className="chatPane">
-        <div className="messages" aria-live="polite">
-          {messages.map((message, index) => (
-            <div className={`message ${message.role}`} key={`${message.role}-${index}`}>{message.content}</div>
-          ))}
-        </div>
-        <form className="composer" onSubmit={submit}>
-          <input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="输入追问、整改或报告请求" />
-          <button type="submit" disabled={!canSubmit}>{busy ? "处理中" : "发送"}</button>
-        </form>
-      </section>
+      <main className="layout">
+        <section className="conversation" aria-label="对话">
+          <div className="transcript">
+            {transcript.length === 0 && (
+              <p className="empty-hint">上传一张施工现场照片并提问开始。</p>
+            )}
+            {transcript.map((entry, i) => (
+              <div key={i} className={`bubble ${entry.role}`}>
+                <span className="role-tag">{entry.role === "user" ? "你" : "助手"}</span>
+                <div className="bubble-content">{entry.content}</div>
+              </div>
+            ))}
+            {loading && <div className="bubble assistant loading">分析中…</div>}
+          </div>
 
-      <aside className="rightPane">
-        <ResultPanel result={latestResult} analysisId={analysisId} conversationId={conversationId} onNotice={(message) => append("assistant", message)} />
-        <section className="toolBox">
-          <h3>工具调用</h3>
-          {toolCalls.length === 0 ? <p className="muted">暂无调用</p> : toolCalls.map((call, index) => (
-            <div className="toolCall" key={`${call.tool}-${index}`}>
-              <span>{call.tool}</span>
-              <strong>{call.status}</strong>
+          {error && (
+            <div className="error-banner" role="alert">
+              {error}
             </div>
-          ))}
+          )}
+
+          <form className="composer" onSubmit={handleSubmit}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              aria-label="选择施工现场照片"
+              onChange={(e) => setImage(e.target.files?.[0] ?? null)}
+            />
+            <textarea
+              value={message}
+              placeholder="例如:请识别这张图的安全隐患"
+              aria-label="消息输入"
+              onChange={(e) => setMessage(e.target.value)}
+              rows={2}
+            />
+            <button type="submit" disabled={!canSubmit}>
+              {loading ? "发送中…" : "发送"}
+            </button>
+          </form>
         </section>
-      </aside>
-    </main>
+
+        <aside className="analysis-panel" aria-label="分析结果">
+          <h2>最新分析</h2>
+          {!analysis && <p className="empty-hint">尚无分析结果。</p>}
+          {analysis && (
+            <>
+              <p className="summary">{analysis.summary}</p>
+              {analysis.needs_followup && analysis.followup_question && (
+                <p className="followup">需要补充:{analysis.followup_question}</p>
+              )}
+              <ul className="hazard-list">
+                {analysis.hazards.map((h, i) => (
+                  <li key={i} className={`hazard risk-${h.risk_level}`}>
+                    <div className="hazard-head">
+                      <span className="hazard-name">{h.name}</span>
+                      <span className="risk-badge">{RISK_LABEL[h.risk_level] ?? h.risk_level}</span>
+                    </div>
+                    <div className="hazard-loc">位置:{h.location}</div>
+                    <div className="hazard-basis">依据:{h.basis}</div>
+                    <div className="hazard-fix">整改:{h.remediation}</div>
+                    <div className="hazard-conf">置信度:{(h.confidence * 100).toFixed(0)}%</div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {toolCalls.length > 0 && (
+            <details className="tool-debug">
+              <summary>工具调用 ({toolCalls.length})</summary>
+              <ul>
+                {toolCalls.map((tc, i) => (
+                  <li key={i}>
+                    {tc.tool_name} — {tc.status}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </aside>
+      </main>
+    </div>
   );
 }

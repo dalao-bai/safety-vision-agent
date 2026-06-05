@@ -1,36 +1,41 @@
+"""FastAPI application entry point for the v0.1 Agent backend.
+
+Constructs the app, validates configuration at startup, enables CORS for the
+local frontend, and registers the chat router.
+"""
+
+from __future__ import annotations
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import analysis, annotations, chat, files, health, remediations, reports, reviews
+from app.api.routes.chat import router as chat_router
 from app.core.config import get_settings
-from app.db.sqlite import initialize_database
-from app.services.file_storage import ensure_runtime_dirs
 
 
-settings = get_settings()
+def create_app() -> FastAPI:
+    """Application factory. Validates configuration eagerly so misconfiguration
+    fails at startup rather than on the first request."""
+    app = FastAPI(title="Construction Safety Agent", version="0.1.0")
 
-app = FastAPI(title=settings.app_name)
+    # Local single-user dev: allow the Vite dev server origin.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    @app.get("/api/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    app.include_router(chat_router)
+
+    # Touch settings so missing/invalid configuration surfaces at startup.
+    get_settings()
+
+    return app
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    ensure_runtime_dirs()
-    initialize_database()
-
-
-app.include_router(health.router, prefix="/api", tags=["health"])
-app.include_router(files.router, prefix="/api/files", tags=["files"])
-app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
-app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
-app.include_router(annotations.router, prefix="/api/annotations", tags=["annotations"])
-app.include_router(reviews.router, prefix="/api/reviews", tags=["reviews"])
-app.include_router(remediations.router, prefix="/api/remediations", tags=["remediations"])
-app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
+app = create_app()

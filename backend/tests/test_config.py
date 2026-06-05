@@ -1,30 +1,80 @@
-import sys
+"""Tests for application configuration loading and validation (U1)."""
 
-from app.core.config import PROJECT_ROOT, get_settings
+from __future__ import annotations
 
+import pytest
 
-def test_default_settings_resolve_project_paths(monkeypatch) -> None:
-    monkeypatch.delenv("SQLITE_PATH", raising=False)
-    get_settings.cache_clear()
+from app.core.config import ConfigError, load_settings
 
-    settings = get_settings()
-
-    assert settings.database_file_path == PROJECT_ROOT / "runtime/safety_vision_agent.sqlite3"
-    assert settings.upload_path == PROJECT_ROOT / "runtime/uploads"
-    assert settings.output_path == PROJECT_ROOT / "runtime/outputs"
-    assert settings.report_path == PROJECT_ROOT / "runtime/reports"
-    assert settings.rule_blocks_file_path == PROJECT_ROOT / "configs/rules/four_openings_edges_rule_blocks.example.json"
+_REQUIRED = {
+    "OPENAI_API_BASE_URL": "https://api.example.com/v1",
+    "OPENAI_API_KEY": "sk-test-key",
+    "VLM_MODEL": "test-vlm",
+    "AGENT_MODEL": "test-agent",
+}
 
 
-def test_environment_overrides_do_not_need_pydantic_settings(tmp_path, monkeypatch) -> None:
-    db_path = tmp_path / "agent.sqlite3"
-    upload_dir = tmp_path / "uploads"
-    monkeypatch.setenv("SQLITE_PATH", db_path.as_posix())
-    monkeypatch.setenv("UPLOAD_DIR", upload_dir.as_posix())
-    get_settings.cache_clear()
+@pytest.fixture(autouse=True)
+def _clear_env(monkeypatch):
+    """Ensure none of the required vars leak in from the real environment."""
+    for key in _REQUIRED:
+        monkeypatch.delenv(key, raising=False)
+    yield
 
-    settings = get_settings()
 
-    assert settings.database_file_path == db_path
-    assert settings.upload_path == upload_dir
-    assert "pydantic_settings" not in sys.modules
+def test_loads_when_all_required_vars_present(monkeypatch):
+    for key, value in _REQUIRED.items():
+        monkeypatch.setenv(key, value)
+
+    settings = load_settings(env_file=None)
+
+    assert settings.openai_api_base_url == _REQUIRED["OPENAI_API_BASE_URL"]
+    assert settings.openai_api_key == _REQUIRED["OPENAI_API_KEY"]
+    assert settings.vlm_model == _REQUIRED["VLM_MODEL"]
+    assert settings.agent_model == _REQUIRED["AGENT_MODEL"]
+
+
+def test_missing_api_key_reports_clear_error(monkeypatch):
+    for key, value in _REQUIRED.items():
+        if key != "OPENAI_API_KEY":
+            monkeypatch.setenv(key, value)
+
+    with pytest.raises(ConfigError) as exc_info:
+        load_settings(env_file=None)
+
+    assert "OPENAI_API_KEY" in str(exc_info.value)
+    assert "missing" in str(exc_info.value).lower()
+
+
+def test_missing_vlm_model_reports_which_field(monkeypatch):
+    for key, value in _REQUIRED.items():
+        if key != "VLM_MODEL":
+            monkeypatch.setenv(key, value)
+
+    with pytest.raises(ConfigError) as exc_info:
+        load_settings(env_file=None)
+
+    assert "VLM_MODEL" in str(exc_info.value)
+
+
+def test_missing_agent_model_reports_which_field(monkeypatch):
+    for key, value in _REQUIRED.items():
+        if key != "AGENT_MODEL":
+            monkeypatch.setenv(key, value)
+
+    with pytest.raises(ConfigError) as exc_info:
+        load_settings(env_file=None)
+
+    assert "AGENT_MODEL" in str(exc_info.value)
+
+
+def test_optional_values_have_defaults(monkeypatch):
+    for key, value in _REQUIRED.items():
+        monkeypatch.setenv(key, value)
+
+    settings = load_settings(env_file=None)
+
+    assert settings.database_path == "runtime/agent.db"
+    assert settings.upload_dir == "runtime/uploads"
+    assert settings.max_image_bytes == 10 * 1024 * 1024
+    assert settings.max_tool_iterations == 5

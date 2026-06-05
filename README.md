@@ -1,68 +1,95 @@
-# safety-vision-agent
+# 工地安全隐患识别 Agent (v0.1)
 
-多轮对话式施工安全隐患识别专家 Agent。
+A local single-user MVP that identifies construction-site safety hazards from an uploaded image using a real VLM, then answers follow-up questions (basis, risk ranking, remediation) via model-driven tool calling.
 
-当前 MVP 主线是 `FastAPI + LangGraph + SQLite + Vite React`。系统支持上传施工现场图片后多轮追问：隐患识别、依据解释、整改建议、报告生成、人工复核和标注反哺。
+This is **v0.1**: the smallest useful end-to-end Agent loop. It is local-only software, **not a production safety-compliance system** and not a replacement for professional safety inspection.
 
-## 核心能力
+## Stack
 
-- 多轮对话：同一 `conversation_id` 下复用会话历史、图片历史和最新融合结果。
-- Agent 路由：按用户意图决定从记忆回答，还是调用 VLM、YOLO、规则、整改、报告工具。
-- 视觉工具：微调 VLM API 识别四口五临边隐患，YOLO API 检测人员/安全帽。
-- 规则和证据融合：本地规则块检索，融合 VLM、YOLO、规则和不确定项。
-- SQLite 业务记忆：保存会话、消息、上传文件、工具调用、分析结果、复核、整改、标注样本和训练候选。
-- 轻量前端：Vite React 控制台用于上传图片、发起多轮对话、查看结构化结果和验证闭环。
+- Backend: FastAPI + SQLite, OpenAI-compatible Responses API
+- Frontend: React + Vite (TypeScript)
 
-## 目录
+## How It Works
 
-```text
-backend/          FastAPI、LangGraph Agent、SQLite repository、工具服务
-frontend/         Vite React Agent 控制台
-configs/          规则示例
-docs/             架构、API、路线图和计划
-scripts/          本地辅助说明
-runtime/          本地上传、输出和 SQLite 数据库，默认不提交
+1. You upload one construction-site image and ask a question.
+2. The backend stores the image, creates a conversation, and calls the **Agent model** with four tools.
+3. The Agent model calls `analyze_image`, which sends the image to the **VLM model** and forces structured hazard JSON (validated server-side).
+4. Follow-up questions reuse the saved analysis through `explain_basis`, `rank_risks`, and `suggest_remediation` — no re-analysis needed.
+
+```
+React/Vite UI ──> FastAPI ──> Agent orchestrator ──> Agent model (tool calling)
+                     │                  │
+                     │                  ├─ analyze_image ──> VLM model ──> structured JSON
+                     │                  ├─ explain_basis / rank_risks / suggest_remediation
+                     │                  │   (deterministic transforms over saved analysis)
+                     ▼                  ▼
+              SQLite (full local audit) + runtime/uploads/
 ```
 
-## 快速开始
+## Configuration
 
-后端：
+Copy `.env.example` to `.env` and fill in:
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `OPENAI_API_BASE_URL` | yes | OpenAI-compatible Responses API base URL |
+| `OPENAI_API_KEY` | yes | API key |
+| `VLM_MODEL` | yes | Model used for image hazard analysis (must accept image input) |
+| `AGENT_MODEL` | yes | Model used for tool selection and final answers (must support function calling) |
+| `DATABASE_PATH` | no | SQLite file path (default `runtime/agent.db`) |
+| `UPLOAD_DIR` | no | Uploaded image directory (default `runtime/uploads`) |
+| `MAX_IMAGE_BYTES` | no | Max upload size (default 10 MiB) |
+| `MAX_TOOL_ITERATIONS` | no | Agent tool-loop cap (default 5) |
+
+Missing or invalid required values fail at startup with a clear message.
+
+## Local Setup
+
+### Backend
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
-cp ../.env.example .env
-uvicorn app.main:app --reload
+pytest                                   # run tests (no network needed; model calls are mocked)
+uvicorn app.main:app --reload            # serves on http://127.0.0.1:8000
 ```
 
-前端：
+### Frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev                              # http://localhost:5173 (proxies /api to the backend)
+npm test                                 # run tests
 ```
 
-默认前端地址是 `http://127.0.0.1:5173`，后端地址是 `http://127.0.0.1:8000`。
+Run both, open http://localhost:5173, upload an image, and ask "请识别这张图的安全隐患". Then try follow-ups: "判断依据是什么?", "哪个隐患最严重?", "应该怎么整改?".
 
-## 配置
+## Project Structure
 
-`.env.example` 中保留 MVP 所需配置：
-
-```text
-SQLITE_PATH=runtime/safety_vision_agent.sqlite3
-VLM_API_BASE_URL=
-VLM_API_KEY=
-VLM_MODEL_NAME=
-YOLO_API_BASE_URL=
-YOLO_API_KEY=
-RULE_BLOCKS_PATH=configs/rules/four_openings_edges_rule_blocks.example.json
+```
+backend/
+  app/
+    agent/        orchestrator (tool-calling loop), context assembly, tools, prompts
+    api/          FastAPI routes + dependency injection
+    core/         configuration
+    db/           SQLite schema, connection, repositories
+    models/       Pydantic domain schemas
+    services/     image storage, Responses API client, VLM analyzer
+  tests/          backend test suite
+frontend/
+  src/            React app, API helper, shared types
+runtime/          local image uploads + SQLite DB (git-ignored)
+docs/             requirements, plans, roadmap
 ```
 
-未配置 VLM/YOLO 时，后端会返回可运行的降级结果，便于本地验证 Agent、多轮记忆和前端闭环。
+## Limitations & Data Handling (v0.1)
 
-## 已移出 MVP 主线
+- **Local single-user only.** No authentication, no user isolation, no multi-tenancy.
+- **Full local audit memory.** SQLite stores conversations, messages, image metadata, structured analysis, every tool call, and raw VLM/Agent responses (including errors) for debugging. Uploaded images are kept on disk under `runtime/`.
+- No retention, redaction, or privacy controls yet — do not point this at real user data or deploy it. These are deferred to a later production-oriented version (see `docs/roadmap.md`).
+- The Agent reports hazards based only on visible image evidence and does not claim legal/regulatory compliance.
 
-SQLAlchemy、Alembic、Celery、Redis、PostgreSQL/psycopg、pydantic-settings 和 Next.js 已移出当前运行路径。LangGraph/LangChain 是当前 Agent 编排主线。队列、高并发、PostgreSQL 迁移、向量检索和更完整产品 UI 都作为后续扩展处理。
+## Status & Roadmap
+
+v0.1 complete. See `docs/plans/2026-06-05-001-feat-v01-agent-mvp-plan.md` for the implementation plan and `docs/roadmap.md` for later versions (multi-image, rule references, reports, human review, remediation tracking, evaluation).

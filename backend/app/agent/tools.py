@@ -1,373 +1,257 @@
-from collections.abc import Awaitable, Callable
-from time import perf_counter
-from typing import Any
+"""Agent tool registry and tool implementations (U6).
 
-import httpx
+Defines the four v0.1 tools in the Responses API function-tool shape and
+implements their handlers. `analyze_image` delegates to the VLM analyzer; the
+other three are deterministic transforms over the stored AnalysisResult so they
+do not trigger extra model calls in v0.1.
 
-from app.db import repositories
-from app.models.schemas import FusedResult, ReportRequest
-from app.services.evidence_fusion import EvidenceFusionService
-from app.services.file_storage import get_uploaded_image_path
-from app.services.memory import hazard_by_index, latest_result_context
-from app.services.remediation_service import RemediationService
-from app.services.report_generator import ReportGenerator
-from app.services.rule_retriever import RuleRetriever
-from app.services.vlm_client import VLMClient
-from app.services.yolo_detector import YOLOHelmetDetector
+Tool execution here is independent of the Agent model — the orchestrator (U7)
+owns the model loop and persistence. These handlers return plain dicts; the
+caller records tool_calls.
+"""
 
+from __future__ import annotations
 
-def _summarize_output(output_json: dict) -> dict:
-    summary: dict[str, Any] = {}
-    if "summary" in output_json:
-        summary["summary"] = output_json["summary"]
-    if "hazards" in output_json:
-        summary["hazard_count"] = len(output_json.get("hazards") or [])
-    if "uncertain_items" in output_json:
-        summary["uncertain_count"] = len(output_json.get("uncertain_items") or [])
-    if "detections" in output_json:
-        summary["detection_count"] = len(output_json.get("detections") or [])
-    if "error" in output_json:
-        summary["error"] = output_json["error"]
-    return summary or output_json
+import time
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from app.models.schemas import AnalysisResult
+from app.services.responses_client import ResponsesClient
+from app.services.vlm_analyzer import AnalyzerOutcome, analyze_image as run_vlm_analysis
+
+# Ordering for risk severity, highest first.
+_RISK_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 
-def _call_payload(record) -> dict:
-    return {
-        "tool": record.tool_name,
-        "status": record.status,
-        "input": record.input_json,
-        "output": _summarize_output(record.output_json),
-        "observation": _summarize_output(record.output_json),
-        "latency_ms": record.latency_ms,
-    }
+@dataclass
+class ToolContext:
+    """Everything the tools need to run for one conversation turn.
+
+    The orchestrator builds this and passes it to execute_tool. ``analysis`` is
+    the latest stored AnalysisResult for the conversation (None if none yet).
+    """
+
+    analysis: AnalysisResult | None = None
+    image_path: str | None = None
+    image_mime: str | None = None
+    vlm_client: ResponsesClient | None = None
+    vlm_model: str | None = None
+    user_question: str | None = None
+    # Set by analyze_image so the orchestrator can persist the new analysis.
+    last_analyzer_outcome: AnalyzerOutcome | None = None
 
 
-async def _record_async_tool(
-    conversation_id: str,
-    analysis_id: str | None,
-    tool_name: str,
-    input_json: dict,
-    fn: Callable[[], Awaitable[Any]],
-) -> tuple[Any | None, dict]:
-    started = perf_counter()
-    try:
-        result = await fn()
-        output = result.model_dump() if hasattr(result, "model_dump") else result
-        output_json = output if isinstance(output, dict) else {"items": output} if isinstance(output, list) else {"result": str(output)}
-        record = repositories.create_tool_call(
-            conversation_id,
-            analysis_id,
-            tool_name,
-            "ok",
-            input_json,
-            output_json,
-            (perf_counter() - started) * 1000,
-        )
-        return result, _call_payload(record)
-    except (httpx.HTTPError, TimeoutError, OSError) as exc:
-        record = repositories.create_tool_call(
-            conversation_id,
-            analysis_id,
-            tool_name,
-            "error",
-            input_json,
-            {"error": str(exc), "type": exc.__class__.__name__},
-            (perf_counter() - started) * 1000,
-        )
-        return None, _call_payload(record)
+class ToolError(Exception):
+    """Raised for unknown tools or invalid tool invocation."""
 
 
-def _record_sync_tool(
-    conversation_id: str,
-    analysis_id: str | None,
-    tool_name: str,
-    input_json: dict,
-    fn: Callable[[], Any],
-) -> tuple[Any | None, dict]:
-    started = perf_counter()
-    try:
-        result = fn()
-        output = result.model_dump() if hasattr(result, "model_dump") else result
-        output_json = output if isinstance(output, dict) else {"items": output} if isinstance(output, list) else {"result": str(output)}
-        record = repositories.create_tool_call(
-            conversation_id,
-            analysis_id,
-            tool_name,
-            "ok",
-            input_json,
-            output_json,
-            (perf_counter() - started) * 1000,
-        )
-        return result, _call_payload(record)
-    except (httpx.HTTPError, TimeoutError, OSError, FileNotFoundError) as exc:
-        record = repositories.create_tool_call(
-            conversation_id,
-            analysis_id,
-            tool_name,
-            "error",
-            input_json,
-            {"error": str(exc), "type": exc.__class__.__name__},
-            (perf_counter() - started) * 1000,
-        )
-        return None, _call_payload(record)
+# --- Tool definitions (Responses API function-tool shape) ------------------
+
+TOOL_DEFINITIONS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "name": "analyze_image",
+        "description": "分析当前上传的施工现场照片,识别安全隐患并返回结构化结果。首次分析或用户上传新照片时调用。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "可选的分析侧重点或用户的具体问题。",
+                }
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "explain_basis",
+        "description": "解释已识别隐患的判断依据。当用户询问依据、理由或为什么不安全时调用。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hazard_name": {
+                    "type": "string",
+                    "description": "可选,指定要解释的某个隐患名称;省略则解释全部。",
+                }
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "rank_risks",
+        "description": "按严重程度对已识别的隐患排序。当用户询问哪个最严重或优先级时调用。",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "suggest_remediation",
+        "description": "针对已识别隐患给出整改建议。当用户询问如何整改、修复或处理时调用。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hazard_name": {
+                    "type": "string",
+                    "description": "可选,指定某个隐患;省略则给出全部隐患的整改建议。",
+                }
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+]
+
+TOOL_NAMES = {d["name"] for d in TOOL_DEFINITIONS}
+
+_NO_ANALYSIS = {
+    "available": False,
+    "message": "当前对话还没有可用的隐患分析结果,请先上传照片进行分析。",
+}
 
 
-def retrieve_rules_tool(conversation_id: str, analysis_id: str | None, object_id: str | None = None) -> tuple[list[dict], dict]:
-    result, call = _record_sync_tool(
-        conversation_id,
-        analysis_id,
-        "rule_retrieval_tool",
-        {"object_id": object_id},
-        lambda: RuleRetriever().retrieve_for_prompt(object_id=object_id),
-    )
-    return result or [], call
+# --- Tool handlers ---------------------------------------------------------
 
-
-async def run_image_analysis_tool(
-    conversation_id: str,
-    message: str,
-    file_id: str | None,
-    image_path: str | None,
-    selected_bbox: list[float] | None,
-) -> dict:
-    resolved_image_path = get_uploaded_image_path(file_id, image_path)
-    analysis = repositories.create_analysis_task(conversation_id, resolved_image_path, message, status="running")
-    tool_calls: list[dict] = []
-
-    rules, call = retrieve_rules_tool(conversation_id, analysis.id)
-    tool_calls.append(call)
-
-    vlm_result, call = await _record_async_tool(
-        conversation_id,
-        analysis.id,
-        "vlm_hazard_analysis_tool",
-        {"image_path": resolved_image_path, "question": message, "target_bbox": selected_bbox},
-        lambda: VLMClient().analyze_image(resolved_image_path, message, rules, selected_bbox),
-    )
-    tool_calls.append(call)
-
-    yolo_result, call = _record_sync_tool(
-        conversation_id,
-        analysis.id,
-        "yolo_helmet_detection_tool",
-        {"image_path": resolved_image_path},
-        lambda: YOLOHelmetDetector().detect(resolved_image_path),
-    )
-    tool_calls.append(call)
-
-    if vlm_result is None or yolo_result is None:
-        repositories.update_analysis_status(analysis.id, "failed")
+def _tool_analyze_image(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    if not (ctx.vlm_client and ctx.vlm_model and ctx.image_path and ctx.image_mime):
         return {
-            "analysis_id": analysis.id,
-            "image_path": resolved_image_path,
-            "fused_result": None,
-            "tool_calls": tool_calls,
-            "error": "visual_tool_failed",
+            "available": False,
+            "message": "没有可分析的照片,请先上传施工现场照片。",
         }
 
-    fused = EvidenceFusionService().fuse(vlm_result, yolo_result)
-    repositories.save_analysis_results(analysis.id, vlm_result.model_dump(), yolo_result.model_dump(), fused.model_dump())
+    question = args.get("question") or ctx.user_question
+    outcome = run_vlm_analysis(
+        ctx.vlm_client, ctx.vlm_model, ctx.image_path, ctx.image_mime, question
+    )
+    # Hand the full outcome back so the orchestrator can persist raw response.
+    ctx.last_analyzer_outcome = outcome
+
+    if not outcome.ok:
+        return {"available": False, "message": f"图像分析失败: {outcome.error}"}
+
+    result = outcome.result
+    ctx.analysis = result  # downstream tools in the same turn can use it
     return {
-        "analysis_id": analysis.id,
-        "image_path": resolved_image_path,
-        "fused_result": fused,
-        "tool_calls": tool_calls,
+        "available": True,
+        "summary": result.summary,
+        "hazard_count": len(result.hazards),
+        "hazards": [h.model_dump(mode="json") for h in result.hazards],
+        "needs_followup": result.needs_followup,
+        "followup_question": result.followup_question,
     }
 
 
-def _with_source(value: Any, source: dict) -> dict:
-    item = value.model_dump() if hasattr(value, "model_dump") else dict(value)
+def _tool_explain_basis(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    if ctx.analysis is None:
+        return _NO_ANALYSIS
+    hazards = ctx.analysis.hazards
+    name = args.get("hazard_name")
+    if name:
+        hazards = [h for h in hazards if h.name == name]
+        if not hazards:
+            return {"available": False, "message": f"未找到名为 {name!r} 的隐患。"}
     return {
-        **item,
-        "source_file_id": source.get("file_id"),
-        "source_analysis_id": source.get("analysis_id"),
-        "source_label": source.get("source_label"),
+        "available": True,
+        "bases": [
+            {"name": h.name, "location": h.location, "basis": h.basis}
+            for h in hazards
+        ],
     }
 
 
-def _source_fused_result(fused: FusedResult, source: dict) -> FusedResult:
-    fused_json = fused.model_dump()
-    fused_json["hazards"] = [_with_source(item, source) for item in fused_json.get("hazards", [])]
-    fused_json["detections"] = [_with_source(item, source) for item in fused_json.get("detections", [])]
-    fused_json["uncertain_items"] = [_with_source(item, source) for item in fused_json.get("uncertain_items", [])]
-    return FusedResult.model_validate(fused_json)
-
-
-async def run_multi_image_analysis_tool(
-    conversation_id: str,
-    message: str,
-    file_ids: list[str],
-    image_paths: list[str],
-    selected_bbox: list[float] | None,
-) -> dict:
-    image_refs = [{"file_id": file_id, "image_path": None} for file_id in file_ids]
-    image_refs.extend({"file_id": None, "image_path": image_path} for image_path in image_paths)
-    if not image_refs:
-        return {"error": "image_required", "tool_calls": []}
-
-    analyses: list[dict] = []
-    errors: list[dict] = []
-    tool_calls: list[dict] = []
-    combined = {
-        "hazards": [],
-        "detections": [],
-        "uncertain_items": [],
-        "uncertain_followups": [],
-        "summary": "",
-        "recommendations": [],
-    }
-
-    for index, ref in enumerate(image_refs, start=1):
-        source_label = f"图片 {index}"
-        result = await run_image_analysis_tool(
-            conversation_id=conversation_id,
-            message=message,
-            file_id=ref["file_id"],
-            image_path=ref["image_path"],
-            selected_bbox=selected_bbox,
-        )
-        analysis_id = result.get("analysis_id")
-        source = {"file_id": ref["file_id"], "analysis_id": analysis_id, "source_label": source_label}
-        tool_calls.extend(result.get("tool_calls", []))
-        analysis_record = {
-            "source_label": source_label,
-            "file_id": ref["file_id"],
-            "image_path": result.get("image_path") or ref["image_path"],
-            "analysis_id": analysis_id,
-            "error": result.get("error"),
-        }
-        analyses.append(analysis_record)
-        if result.get("error"):
-            errors.append({"code": result["error"], "source_label": source_label, "analysis_id": analysis_id})
-            continue
-        fused = result.get("fused_result")
-        if not fused:
-            continue
-        if len(image_refs) == 1:
-            sourced = _source_fused_result(fused, source)
-            repositories.save_fused_result(analysis_id, sourced.model_dump())
-            return {
-                "analysis_id": analysis_id,
-                "analyses": analyses,
-                "fused_result": sourced,
-                "tool_calls": tool_calls,
+def _tool_rank_risks(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    if ctx.analysis is None:
+        return _NO_ANALYSIS
+    # Sort by risk severity, then by descending confidence as a tiebreaker.
+    ranked = sorted(
+        ctx.analysis.hazards,
+        key=lambda h: (_RISK_ORDER.get(h.risk_level.value, 99), -h.confidence),
+    )
+    return {
+        "available": True,
+        "ranked": [
+            {
+                "rank": i + 1,
+                "name": h.name,
+                "risk_level": h.risk_level.value,
+                "confidence": h.confidence,
             }
-        fused_json = fused.model_dump() if hasattr(fused, "model_dump") else fused
-        combined["hazards"].extend(_with_source(item, source) for item in fused_json.get("hazards", []))
-        combined["detections"].extend(_with_source(item, source) for item in fused_json.get("detections", []))
-        combined["uncertain_items"].extend(_with_source(item, source) for item in fused_json.get("uncertain_items", []))
-        combined["uncertain_followups"].extend(fused_json.get("uncertain_followups", []))
-        combined["recommendations"].extend(fused_json.get("recommendations", []))
-
-    hazard_count = len(combined["hazards"])
-    uncertain_count = len(combined["uncertain_items"])
-    if not any(not item.get("error") for item in analyses):
-        return {
-            "analysis_id": analyses[-1]["analysis_id"] if analyses else None,
-            "analyses": analyses,
-            "fused_result": None,
-            "tool_calls": tool_calls,
-            "error": "visual_tool_failed",
-            "errors": errors,
-        }
-    combined["summary"] = f"共分析 {len(image_refs)} 张图片，发现 {hazard_count} 个明确隐患，{uncertain_count} 个证据不足项。"
-    combined["recommendations"] = list(dict.fromkeys(combined["recommendations"]))
-    aggregate = repositories.create_analysis_task(conversation_id, "aggregate:multi-image", message, status="running")
-    repositories.save_fused_result(aggregate.id, combined)
-    return {
-        "analysis_id": aggregate.id,
-        "analyses": analyses,
-        "fused_result": FusedResult.model_validate(combined),
-        "tool_calls": tool_calls,
-        "errors": errors,
+            for i, h in enumerate(ranked)
+        ],
     }
 
 
-def memory_lookup_tool(conversation_id: str) -> dict:
-    context = latest_result_context(conversation_id)
-    if not context:
-        return {}
+def _tool_suggest_remediation(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    if ctx.analysis is None:
+        return _NO_ANALYSIS
+    hazards = ctx.analysis.hazards
+    name = args.get("hazard_name")
+    if name:
+        hazards = [h for h in hazards if h.name == name]
+        if not hazards:
+            return {"available": False, "message": f"未找到名为 {name!r} 的隐患。"}
     return {
-        "analysis": context["analysis"],
-        "fused_result": context["result"].model_dump(),
-        "tool_calls": [],
+        "available": True,
+        "remediations": [
+            {"name": h.name, "remediation": h.remediation} for h in hazards
+        ],
     }
 
 
-def score_risk_tool(fused_result: dict) -> dict:
-    hazards = []
-    for hazard in fused_result.get("hazards") or []:
-        confidence = hazard.get("confidence")
-        score = 50
-        reasons = ["基础隐患风险"]
-        hazard_type = str(hazard.get("hazard_type") or hazard.get("hazard_type_id") or "")
-        visual = str(hazard.get("visual_evidence") or "")
-        rule = str(hazard.get("rule") or "")
-        if any(keyword in hazard_type + visual + rule for keyword in ["临边", "洞口", "坠落", "防护"]):
-            score += 20
-            reasons.append("涉及临边/洞口/坠落防护")
-        if any(keyword in visual for keyword in ["人员", "工人", "靠近", "作业"]):
-            score += 15
-            reasons.append("可见人员接近风险区域")
-        if confidence is not None:
-            if confidence >= 0.8:
-                score += 10
-                reasons.append("证据置信度较高")
-            elif confidence < 0.5:
-                score -= 15
-                reasons.append("证据置信度偏低")
-        if hazard.get("evidence_sufficiency") == "insufficient":
-            score -= 20
-            reasons.append("证据不足，降低确认优先级")
-        score = max(0, min(100, score))
-        if score >= 85:
-            level = "critical"
-        elif score >= 65:
-            level = "high"
-        elif score >= 40:
-            level = "medium"
-        else:
-            level = "low"
-        hazards.append({**hazard, "risk_score": score, "risk_level": level, "risk_reasons": reasons})
-
-    hazards.sort(key=lambda item: (item.get("risk_score") or 0, item.get("confidence") or 0), reverse=True)
-    scored = {**fused_result, "hazards": hazards}
-    return {"fused_result": scored, "tool_calls": []}
+_HANDLERS: dict[str, Callable[[dict[str, Any], ToolContext], dict[str, Any]]] = {
+    "analyze_image": _tool_analyze_image,
+    "explain_basis": _tool_explain_basis,
+    "rank_risks": _tool_rank_risks,
+    "suggest_remediation": _tool_suggest_remediation,
+}
 
 
-def answer_rule_basis_tool(conversation_id: str, message: str) -> dict:
-    hazard_context = hazard_by_index(conversation_id, message)
-    if not hazard_context or hazard_context.get("error"):
-        return hazard_context
-    hazard = hazard_context["hazard"]
-    rules, call = retrieve_rules_tool(conversation_id, hazard_context["analysis"]["id"], hazard.get("object_id"))
-    return {**hazard_context, "rules": rules, "tool_calls": [call]}
+@dataclass
+class ToolResult:
+    """Outcome of executing one tool, including audit fields."""
+
+    tool_name: str
+    status: str  # 'success' | 'error'
+    output: dict[str, Any] | None
+    error: str | None
+    duration_ms: int
 
 
-def create_remediation_tool(conversation_id: str, message: str) -> dict:
-    hazard_context = hazard_by_index(conversation_id, message)
-    if not hazard_context or hazard_context.get("error"):
-        return hazard_context
-    hazard = hazard_context["hazard"]
-    service = RemediationService()
-    task = repositories.create_remediation_task(
-        conversation_id,
-        hazard_context["analysis"]["id"],
-        hazard_context["index"],
-        service.default_title(hazard, hazard_context["index"]),
-        service.default_recommendation(hazard),
-        None,
-        None,
-        hazard,
-    )
-    return {**hazard_context, "remediation_task": dict(task)}
+def execute_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Execute a tool by name and return a ToolResult with timing.
 
-
-def generate_report_tool(conversation_id: str, fused_result: dict | None = None) -> dict:
-    context = latest_result_context(conversation_id)
-    if not context:
-        return {}
-    result = FusedResult.model_validate(fused_result or context["fused_result"])
-    report = ReportGenerator().generate(ReportRequest(conversation_id=conversation_id, fused_result=result))
-    record = repositories.create_report(conversation_id, context["analysis"]["id"], report.title, report.markdown)
-    return {"report": report.model_dump(), "report_record": dict(record), "analysis": context["analysis"], "fused_result": result.model_dump()}
+    Unknown tool names produce an error ToolResult rather than raising, so the
+    orchestrator can record the failed call and continue gracefully.
+    """
+    start = time.monotonic()
+    handler = _HANDLERS.get(name)
+    if handler is None:
+        duration = int((time.monotonic() - start) * 1000)
+        return ToolResult(
+            tool_name=name,
+            status="error",
+            output=None,
+            error=f"unknown tool: {name!r}",
+            duration_ms=duration,
+        )
+    try:
+        output = handler(args or {}, ctx)
+        duration = int((time.monotonic() - start) * 1000)
+        return ToolResult(
+            tool_name=name, status="success", output=output, error=None,
+            duration_ms=duration,
+        )
+    except Exception as exc:  # noqa: BLE001 - record any handler error as audit data
+        duration = int((time.monotonic() - start) * 1000)
+        return ToolResult(
+            tool_name=name, status="error", output=None, error=str(exc),
+            duration_ms=duration,
+        )
