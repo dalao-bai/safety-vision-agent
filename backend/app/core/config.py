@@ -53,10 +53,12 @@ class Settings(BaseSettings):
     max_tool_iterations: int = Field(5, alias="MAX_TOOL_ITERATIONS")
 
 
-def load_settings(env_file: str | None = ".env") -> Settings:
+def load_settings(env_file: str | None = _DEFAULT_ENV_FILE) -> Settings:
     """Load settings, converting pydantic validation errors into a clear ConfigError.
 
-    Pass ``env_file=None`` to skip reading any .env file (used by tests so the
+    Defaults to the repo-root ``.env`` (resolved from this file's location) so
+    the backend finds it regardless of the current working directory. Pass
+    ``env_file=None`` to skip reading any .env file (used by tests so the
     process environment is the only source of truth).
     """
     try:
