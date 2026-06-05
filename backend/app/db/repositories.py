@@ -149,13 +149,15 @@ def save_tool_call(
     output_data: Any = None,
     error: str | None = None,
     duration_ms: int | None = None,
+    call_id: str | None = None,
 ) -> int:
     cur = conn.execute(
         "INSERT INTO tool_calls "
-        "(conversation_id, tool_name, input_json, output_json, status, error, duration_ms, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(conversation_id, call_id, tool_name, input_json, output_json, status, error, duration_ms, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             conversation_id,
+            call_id,
             tool_name,
             _dumps(input_data),
             _dumps(output_data),

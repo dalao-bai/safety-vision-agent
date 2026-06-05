@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS analysis_results (
 CREATE TABLE IF NOT EXISTS tool_calls (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id TEXT NOT NULL,
+    call_id         TEXT,                   -- provider function-call id linking this tool call to the Agent response that requested it
     tool_name       TEXT NOT NULL,
     input_json      TEXT,                   -- serialized tool input
     output_json     TEXT,                   -- serialized tool output

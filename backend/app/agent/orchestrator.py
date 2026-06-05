@@ -110,14 +110,18 @@ def run_turn(
     vlm_client: ResponsesClient,
     vlm_model: str,
     max_iterations: int = 5,
+    new_image_uploaded: bool = False,
 ) -> OrchestratorResult:
     """Run one bounded tool-calling turn and return the assistant answer.
 
     The user message must already be persisted by the caller before this runs
-    so it appears in the loaded history.
+    so it appears in the loaded history. ``new_image_uploaded`` tells the
+    context builder that an image arrived this turn so the Agent is instructed
+    to analyze it (the model cannot see images directly).
     """
     loaded = build_context(
-        conn, conversation_id, user_message, vlm_client, vlm_model
+        conn, conversation_id, user_message, vlm_client, vlm_model,
+        new_image_uploaded=new_image_uploaded,
     )
     input_items = loaded.input_items
     tool_ctx = loaded.tool_context
@@ -190,7 +194,7 @@ def run_turn(
                 conn, conversation_id, tool_name=tool_result.tool_name,
                 status=tool_result.status, input_data=fc["arguments"],
                 output_data=tool_result.output, error=tool_result.error,
-                duration_ms=tool_result.duration_ms,
+                duration_ms=tool_result.duration_ms, call_id=fc["call_id"],
             )
             tool_summaries.append(ToolCallSummary(
                 tool_name=tool_result.tool_name, status=tool_result.status,

@@ -37,11 +37,18 @@ def build_context(
     user_message: str,
     vlm_client: ResponsesClient,
     vlm_model: str,
+    new_image_uploaded: bool = False,
 ) -> LoadedContext:
     """Assemble the agent input and tool context for the current turn.
 
     The current ``user_message`` is expected to already be persisted by the
     caller; it is included from the loaded history.
+
+    ``new_image_uploaded`` signals that an image was uploaded on THIS turn. The
+    Agent model otherwise only sees text messages and has no way to know an
+    image is available, so when set we inject an explicit instruction to call
+    ``analyze_image``. This keeps the core loop reliable without depending on
+    provider-specific forced tool-choice.
     """
     # Latest stored analysis (if any) so follow-up tools have something to read.
     raw_analysis = repo.get_latest_analysis(conn, conversation_id)
@@ -60,6 +67,13 @@ def build_context(
     for m in messages[-_HISTORY_LIMIT:]:
         # Responses API accepts simple role/content text messages.
         input_items.append({"role": m["role"], "content": m["content"]})
+
+    # The model can't see images directly — tell it one is ready to analyze.
+    if new_image_uploaded and image_path:
+        input_items.append({
+            "role": "system",
+            "content": "用户在本轮上传了一张新的施工现场照片,尚未分析。请先调用 analyze_image 工具对其进行隐患分析,再回答用户的问题。",
+        })
 
     tool_context = ToolContext(
         analysis=analysis,

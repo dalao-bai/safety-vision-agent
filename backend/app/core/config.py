@@ -6,8 +6,15 @@ present or settings loading fails with a clear, actionable error.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve the .env at the repository root so the backend finds it regardless of
+# the current working directory (e.g. when started from backend/). config.py is
+# at <root>/backend/app/core/config.py, so the root is four parents up.
+_DEFAULT_ENV_FILE = str(Path(__file__).resolve().parents[3] / ".env")
 
 # Maps internal field names to the environment variable names users actually set.
 # Used to produce error messages in terms users recognize.
@@ -27,7 +34,7 @@ class Settings(BaseSettings):
     """Runtime settings for the v0.1 Agent backend."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_DEFAULT_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,

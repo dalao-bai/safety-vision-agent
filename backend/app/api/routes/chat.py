@@ -44,17 +44,15 @@ async def chat(
     if not message or not message.strip():
         raise HTTPException(status_code=422, detail="message must not be empty")
 
-    # Resolve conversation: reuse if provided and valid, else create.
-    if conversation_id:
-        if repo.get_conversation(conn, conversation_id) is None:
-            raise HTTPException(
-                status_code=404, detail=f"unknown conversation_id: {conversation_id}"
-            )
-        cid = conversation_id
-    else:
-        cid = repo.create_conversation(conn)
+    # If reusing a conversation, verify it exists before any mutation.
+    if conversation_id and repo.get_conversation(conn, conversation_id) is None:
+        raise HTTPException(
+            status_code=404, detail=f"unknown conversation_id: {conversation_id}"
+        )
 
-    # Store image if provided.
+    # Validate and store the image to disk BEFORE creating a conversation, so an
+    # invalid image fails fast (422) without leaving an empty conversation behind.
+    stored = None
     if image is not None:
         data = await image.read()
         try:
@@ -66,6 +64,12 @@ async def chat(
             )
         except ImageValidationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Resolve conversation: reuse the (already-validated) id, or create a new one.
+    cid = conversation_id or repo.create_conversation(conn)
+
+    # Record the stored image's metadata now that we have a conversation.
+    if stored is not None:
         repo.add_uploaded_image(
             conn,
             cid,
@@ -89,6 +93,7 @@ async def chat(
             vlm_client,
             settings.vlm_model,
             max_iterations=settings.max_tool_iterations,
+            new_image_uploaded=stored is not None,
         )
     except Exception as exc:  # noqa: BLE001 - controlled API error, audit already attempted
         raise HTTPException(

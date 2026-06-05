@@ -100,6 +100,7 @@ def test_tool_call_preserves_status_and_payloads(conn):
         input_data={"scope": "all"},
         output_data={"ranked": ["a", "b"]},
         duration_ms=42,
+        call_id="call_abc",
     )
 
     calls = repo.list_tool_calls(conn, cid)
@@ -109,6 +110,8 @@ def test_tool_call_preserves_status_and_payloads(conn):
     assert calls[0]["input_json"] == {"scope": "all"}
     assert calls[0]["output_json"] == {"ranked": ["a", "b"]}
     assert calls[0]["duration_ms"] == 42
+    # call_id links the tool call to the Agent response that requested it.
+    assert calls[0]["call_id"] == "call_abc"
 
 
 def test_model_response_preserves_raw_payload(conn):

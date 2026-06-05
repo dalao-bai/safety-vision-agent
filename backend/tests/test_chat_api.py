@@ -73,7 +73,7 @@ def client(tmp_path):
     per-test via the returned holder."""
     db_path = tmp_path / "api.db"
 
-    holder: dict = {"agent": None}
+    holder: dict = {"agent": None, "db_path": str(db_path)}
 
     app = create_app()
 
@@ -183,6 +183,25 @@ def test_unsupported_image_type_returns_422(client):
         files={"image": ("evil.gif", b"GIF89a", "image/gif")},
     )
     assert resp.status_code == 422
+
+
+def test_invalid_image_leaves_no_empty_conversation(client):
+    test_client, holder = client
+    holder["agent"] = _ScriptedAgentClient([_final("x")])
+    resp = test_client.post(
+        "/api/chat",
+        data={"message": "请识别隐患"},
+        files={"image": ("evil.gif", b"GIF89a", "image/gif")},
+    )
+    assert resp.status_code == 422
+    # The rejected request must not have created a conversation.
+    conn = connect(holder["db_path"])
+    init_db(conn)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
+    finally:
+        conn.close()
+    assert count == 0
 
 
 def test_text_only_message_without_image_works(client):
