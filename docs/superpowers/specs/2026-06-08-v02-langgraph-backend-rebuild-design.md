@@ -75,7 +75,7 @@ React/Vite UI ──> FastAPI 路由(保留)
 **审计(新增 `AuditCallbackHandler`,`BaseCallbackHandler` 子类)**
 - `on_tool_start`:记开始时间 + 入参。
 - `on_tool_end`:记出参 + 算 duration → 写 `tool_calls`。
-- `on_chat_model_end`:拿 agent 原始响应 → 写 `model_responses`。
+- `on_llm_end`(注意:LangChain v1 没有 `on_chat_model_end`,聊天模型的结束事件就是 `on_llm_end`,收到 `LLMResult`):拿 agent 原始响应 → 写 `model_responses`。
 - VLM 的原始响应 + 结构化 `analysis_results`:在 `analyze_image` 工具**内部**落库(VLM 是工具内的独立模型调用,不经 agent 的 callback)。
 
 ### 审计表映射(v0.1 → v0.2 写入点)
@@ -84,7 +84,7 @@ React/Vite UI ──> FastAPI 路由(保留)
 |---|---|---|
 | `conversations` / `messages` / `uploaded_images` | FastAPI 路由 + repo | 不变(保留) |
 | `tool_calls` | orchestrator 循环内 | `AuditCallbackHandler.on_tool_end` |
-| `model_responses`(agent) | orchestrator 循环内 | `AuditCallbackHandler.on_chat_model_end` |
+| `model_responses`(agent) | orchestrator 循环内 | `AuditCallbackHandler.on_llm_end` |
 | `model_responses`(VLM) | orchestrator | `analyze_image` 工具内部 |
 | `analysis_results` | orchestrator | `analyze_image` 工具内部 |
 
@@ -141,3 +141,12 @@ React/Vite UI ──> FastAPI 路由(保留)
 - 工具依赖注入的确切机制(`InjectedState` vs 闭包 vs `RunnableConfig`)。
 - `recursion_limit` 与受控降级的精确接线点(callback vs `run_turn` 封装层)。
 - `ChatOpenAI` + `use_responses_api=True` 对当前端点多模态图像输入的确切消息格式。
+
+## 端点能力 Spike 结果（2026-06-08）
+
+验证脚本 `backend/spike_endpoint.py` 已运行，结论如下：
+
+- **A) Responses API + json_schema 结构化输出**：**OK**。`ChatOpenAI(use_responses_api=True)` 可达，`with_structured_output(method="json_schema")` 正常返回校验后的 Pydantic 对象。计划中所有 `with_structured_output` 调用均使用默认 `json_schema`，无需改为 `function_calling`。
+- **B) VLM 多模态图像输入**：返回 502「当前请求压力过大，请稍后再试」。这是端点侧瞬时过载，**不是格式或能力问题**。`HumanMessage(content_blocks=[{"type":"image",...}])` 格式正确，端点支持视觉输入。不影响实现计划，继续推进。
+
+**决策：** 全计划使用 `method="json_schema"`（默认值），无需调整。
