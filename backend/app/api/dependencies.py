@@ -13,6 +13,7 @@ from typing import Iterator
 
 from app.core.config import Settings, get_settings
 from app.db.sqlite import connect, init_db
+from app.services.regulation_store import RegulationStore
 from app.services.responses_client import ResponsesClient
 
 
@@ -40,3 +41,23 @@ def _vlm_client() -> ResponsesClient:
 
 def get_vlm_client() -> ResponsesClient:
     return _vlm_client()
+
+
+@lru_cache(maxsize=1)
+def _regulation_store() -> RegulationStore:
+    s = get_settings()
+    vlm = _vlm_client()
+    return RegulationStore(
+        chroma_dir=s.chroma_dir,
+        embed_fn=lambda texts: vlm.embed(s.embedding_model, texts),
+    )
+
+
+def get_regulation_store() -> RegulationStore:
+    """Return the application-lifetime RegulationStore singleton.
+
+    The ChromaDB PersistentClient is expensive to open and holds a file lock;
+    constructing it once at startup and reusing it across requests avoids
+    file-descriptor exhaustion and lock contention under concurrency.
+    """
+    return _regulation_store()

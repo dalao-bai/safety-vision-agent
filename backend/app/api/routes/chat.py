@@ -32,6 +32,7 @@ from app.api.auth_deps import CurrentUser, get_current_user
 from app.api.dependencies import (
     get_app_settings,
     get_db,
+    get_regulation_store,
     get_vlm_client,
 )
 
@@ -56,6 +57,7 @@ async def chat(
     conn: sqlite3.Connection = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
     vlm_client: ResponsesClient = Depends(get_vlm_client),
+    reg_store: RegulationStore = Depends(get_regulation_store),
     user: CurrentUser = Depends(get_current_user),
 ) -> ChatResponse:
     if not message or not message.strip():
@@ -103,13 +105,9 @@ async def chat(
     repo.add_message(conn, cid, "user", message)
     repo.touch_conversation(conn, cid)
 
-    # 业务工具回调：规范语义检索（惰性构造向量库连接）。
+    # 业务工具回调：规范语义检索（使用应用级单例，避免每请求重建 ChromaDB 连接）。
     def _regulation_search(query: str, top_k: int = 3) -> list[dict]:
-        store = RegulationStore(
-            chroma_dir=settings.chroma_dir,
-            embed_fn=lambda texts: vlm_client.embed(settings.embedding_model, texts),
-        )
-        return store.search(query, top_k=top_k)
+        return reg_store.search(query, top_k=top_k)
 
     # 业务工具回调：报告生成（登记后台任务，返回 task_id）。
     def _report_scheduler(start: str | None, end: str | None) -> str:
