@@ -74,7 +74,6 @@ def confirm_analyses(
                     repo.upsert_hazard_stat(
                         conn, user.id, hazard.name, hazard.risk_level.value, body.conversation_id
                     )
-        analysis = raw_analysis  # keep reference for annotation branch below
         else:
             all_accurate = False
             # 不准确：整图写 annotation.db。image_id 重复（UNIQUE）则跳过。
@@ -90,7 +89,7 @@ def confirm_analyses(
                         image_path=image_row["stored_path"],
                         image_filename=image_row["stored_filename"],
                         mime_type=image_row["mime_type"],
-                        analysis=analysis or {},
+                        analysis=raw_analysis or {},
                     )
                     annotation_created += 1
                 except sqlite3.IntegrityError:

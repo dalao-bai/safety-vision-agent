@@ -1,8 +1,10 @@
 """Tests for conversation context assembly (v0.2 / LangGraph).
 
-Verifies that build_context returns a list[BaseMessage] and injects an explicit
-analyze_image instruction when an image was uploaded this turn — the agent model
-only sees text and otherwise has no way to know an image is available.
+build_context now returns an AgentContext(system_prompt: str, messages: list[BaseMessage]).
+system_prompt is a plain string for create_react_agent's state_modifier parameter.
+messages contains only HumanMessage / AIMessage objects — no SystemMessages.
+Image-upload and preference instructions are merged into system_prompt so that
+no SystemMessage ever appears at a non-leading position in the message list.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from app.agent.context import build_context
+from app.agent.context import AgentContext, build_context
 from app.db import repositories as repo
 from app.db.sqlite import connect, init_db
 
@@ -23,28 +25,18 @@ def conn(tmp_path):
     c.close()
 
 
-def _instruction_present(messages: list) -> bool:
-    """Return True if the injected analyze_image instruction is in the list.
-
-    Keys on "尚未分析" which only appears in the injected SystemMessage, not in
-    AGENT_SYSTEM_PROMPT (which mentions analyze_image as a tool name but not
-    this phrase).
-    """
-    return any(
-        isinstance(m, SystemMessage) and "尚未分析" in m.content
-        for m in messages
-    )
-
-
-def test_returns_list_of_base_messages(conn):
+def test_returns_agent_context(conn):
     cid = repo.create_conversation(conn)
     repo.add_message(conn, cid, "user", "你好")
 
-    messages = build_context(conn, cid, "你好")
+    ctx = build_context(conn, cid, "你好")
 
-    assert isinstance(messages, list)
-    assert len(messages) >= 2  # at least system + 1 history item
-    assert isinstance(messages[0], SystemMessage)
+    assert isinstance(ctx, AgentContext)
+    assert isinstance(ctx.system_prompt, str)
+    assert isinstance(ctx.messages, list)
+    assert len(ctx.messages) >= 1  # at least the 1 history item
+    # No SystemMessages in the messages list — all system content is in system_prompt.
+    assert not any(isinstance(m, SystemMessage) for m in ctx.messages)
 
 
 def test_history_converted_to_correct_message_types(conn):
@@ -53,10 +45,9 @@ def test_history_converted_to_correct_message_types(conn):
     repo.add_message(conn, cid, "assistant", "发现1处隐患。")
     repo.add_message(conn, cid, "user", "哪个最严重")
 
-    messages = build_context(conn, cid, "哪个最严重")
+    ctx = build_context(conn, cid, "哪个最严重")
 
-    # Strip leading SystemMessage(s) to get the history portion.
-    history = [m for m in messages if not isinstance(m, SystemMessage)]
+    history = ctx.messages
     assert len(history) == 3
     assert isinstance(history[0], HumanMessage)
     assert isinstance(history[1], AIMessage)
@@ -65,16 +56,21 @@ def test_history_converted_to_correct_message_types(conn):
     assert history[1].content == "发现1处隐患。"
 
 
-def test_new_image_injects_analyze_instruction(conn):
+def test_new_image_injects_analyze_instruction_into_system_prompt(conn):
     cid = repo.create_conversation(conn)
     repo.add_uploaded_image(
         conn, cid, "runtime/uploads/x.jpg", "x.jpg", "image/jpeg", 100
     )
     repo.add_message(conn, cid, "user", "请识别隐患")
 
-    messages = build_context(conn, cid, "请识别隐患", new_image_uploaded=True)
+    ctx = build_context(conn, cid, "请识别隐患", new_image_uploaded=True)
 
-    assert _instruction_present(messages)
+    assert "尚未分析" in ctx.system_prompt
+    # Instruction must NOT appear as a mid-sequence SystemMessage.
+    assert not any(
+        isinstance(m, SystemMessage) and "尚未分析" in m.content
+        for m in ctx.messages
+    )
 
 
 def test_followup_without_new_image_has_no_instruction(conn):
@@ -84,34 +80,35 @@ def test_followup_without_new_image_has_no_instruction(conn):
     )
     repo.add_message(conn, cid, "user", "哪个最严重")
 
-    messages = build_context(conn, cid, "哪个最严重", new_image_uploaded=False)
+    ctx = build_context(conn, cid, "哪个最严重", new_image_uploaded=False)
 
-    assert not _instruction_present(messages)
+    assert "尚未分析" not in ctx.system_prompt
 
 
 def test_new_image_flag_without_any_image_does_not_inject(conn):
-    """Flag set but no image row — must not inject a misleading instruction."""
+    """Flag set but no image row in DB — must not inject a misleading instruction."""
     cid = repo.create_conversation(conn)
     repo.add_message(conn, cid, "user", "test")
 
-    messages = build_context(conn, cid, "test", new_image_uploaded=True)
+    ctx = build_context(conn, cid, "test", new_image_uploaded=True)
 
-    assert not _instruction_present(messages)
+    assert "尚未分析" not in ctx.system_prompt
 
 
-def test_preference_memory_injected_as_system_message(conn):
+def test_preference_memory_injected_into_system_prompt(conn):
     uid = repo.create_user(conn, "alice", "h")
     repo.upsert_preferences(conn, uid, preference_summary="关注高处作业安全")
     cid = repo.create_conversation(conn, user_id=uid)
     repo.add_message(conn, cid, "user", "你好")
 
-    messages = build_context(conn, cid, "你好", user_id=uid)
+    ctx = build_context(conn, cid, "你好", user_id=uid)
 
-    pref_msgs = [
-        m for m in messages
-        if isinstance(m, SystemMessage) and "关注高处作业安全" in m.content
-    ]
-    assert len(pref_msgs) == 1
+    assert "关注高处作业安全" in ctx.system_prompt
+    # Must not appear as a mid-sequence SystemMessage.
+    assert not any(
+        isinstance(m, SystemMessage) and "关注高处作业安全" in m.content
+        for m in ctx.messages
+    )
 
 
 def test_no_preference_injection_when_no_prefs(conn):
@@ -119,18 +116,18 @@ def test_no_preference_injection_when_no_prefs(conn):
     cid = repo.create_conversation(conn, user_id=uid)
     repo.add_message(conn, cid, "user", "你好")
 
-    messages = build_context(conn, cid, "你好", user_id=uid)
+    ctx = build_context(conn, cid, "你好", user_id=uid)
 
-    # Only the main system prompt SystemMessage — no preference SystemMessage.
-    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
-    assert len(system_msgs) == 1
+    # system_prompt must contain the base system prompt but not any preference.
+    assert "关注" not in ctx.system_prompt or "高处作业" not in ctx.system_prompt
 
 
 def test_no_preference_injection_without_user_id(conn):
     cid = repo.create_conversation(conn)
     repo.add_message(conn, cid, "user", "你好")
 
-    messages = build_context(conn, cid, "你好")
+    ctx = build_context(conn, cid, "你好")
 
-    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
-    assert len(system_msgs) == 1
+    # Without a user_id, no preference lookup happens.
+    assert isinstance(ctx.system_prompt, str)
+    assert not any(isinstance(m, SystemMessage) for m in ctx.messages)

@@ -262,15 +262,27 @@ def test_generate_report_returns_task_id(conn, cid):
         return "task-abc"
 
     tools = _tools(conn, cid, report_scheduler=_fake_scheduler)
-    result = tools["generate_report"].invoke({"start_date": "", "end_date": ""})
+    result = tools["generate_report"].invoke({"start_date": "2024-01-01", "end_date": "2024-12-31"})
 
     assert result["available"] is True
     assert result["task_id"] == "task-abc"
 
 
+def test_generate_report_without_dates_returns_unavailable(conn, cid):
+    """Without dates the tool must ask the agent to confirm the range first."""
+    def _fake_scheduler(start, end):
+        return "task-abc"
+
+    tools = _tools(conn, cid, report_scheduler=_fake_scheduler)
+    result = tools["generate_report"].invoke({"start_date": "", "end_date": ""})
+
+    assert result["available"] is False
+    assert "时间范围" in result["message"]
+
+
 def test_generate_report_without_callback_reports_unavailable(conn, cid):
     tools = _tools(conn, cid)
-    result = tools["generate_report"].invoke({"start_date": "", "end_date": ""})
+    result = tools["generate_report"].invoke({"start_date": "2024-01-01", "end_date": "2024-12-31"})
     assert result["available"] is False
 
 
