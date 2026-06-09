@@ -88,3 +88,20 @@ class ResponsesClient:
         """Escape hatch for the orchestrator's tool-calling loop, which needs the
         full raw response (tool calls, not just text)."""
         return self._client.responses.create(**kwargs)
+
+    def embed(self, model: str, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts via the OpenAI-compatible embeddings endpoint.
+
+        Reuses the same base_url/api_key as the chat models (v0.2 regulation
+        semantic search). Returns one vector per input text, order preserved.
+        Tests substitute a fake client exposing ``embeddings.create``.
+        """
+        response = self._client.embeddings.create(model=model, input=texts)
+        # SDK shape: response.data is a list of objects with .embedding; tolerate
+        # a plain-dict shape for fakes/tests.
+        data = response.get("data") if isinstance(response, dict) else response.data
+        vectors: list[list[float]] = []
+        for item in data:
+            emb = item.get("embedding") if isinstance(item, dict) else item.embedding
+            vectors.append(list(emb))
+        return vectors

@@ -11,6 +11,7 @@ _REQUIRED = {
     "OPENAI_API_KEY": "sk-test-key",
     "VLM_MODEL": "test-vlm",
     "AGENT_MODEL": "test-agent",
+    "JWT_SECRET": "test-jwt-secret",
 }
 
 

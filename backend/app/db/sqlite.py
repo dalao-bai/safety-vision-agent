@@ -37,3 +37,24 @@ def init_db(conn: sqlite3.Connection) -> None:
     schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
     conn.executescript(schema_sql)
     conn.commit()
+
+    # conversations 新增列迁移（SQLite 不支持 ADD COLUMN IF NOT EXISTS，Python 侧判断）
+    existing_cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
+    }
+    new_cols = [
+        ("user_id",   "ALTER TABLE conversations ADD COLUMN user_id TEXT REFERENCES users(id)"),
+        ("confirmed", "ALTER TABLE conversations ADD COLUMN confirmed INTEGER DEFAULT NULL"),
+    ]
+    for col_name, ddl in new_cols:
+        if col_name not in existing_cols:
+            conn.execute(ddl)
+    conn.commit()
+
+    # user_id 列就绪后才能建这个索引（schema.sql 阶段列尚不存在）
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_conversations_user_date "
+        "ON conversations(user_id, created_at)"
+    )
+    conn.commit()

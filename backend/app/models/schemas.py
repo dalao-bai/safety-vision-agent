@@ -75,3 +75,50 @@ class ApiError(BaseModel):
 
     error: str
     detail: str | None = None
+
+
+# ============================================================
+# v0.2 新增：认证
+# ============================================================
+
+
+class LoginRequest(BaseModel):
+    """用户名 + 静态 API 密钥登录（无密码）。"""
+
+    username: str
+    api_key: str
+
+
+class LoginResponse(BaseModel):
+    """登录成功返回 JWT 及用户标识。"""
+
+    token: str
+    user_id: str
+    username: str
+
+
+# ============================================================
+# v0.2 新增：分析确认（前端 UI 直调，不经 LLM 路由）
+# ============================================================
+
+
+class ImageConfirmation(BaseModel):
+    """单张图片的确认结果。"""
+
+    image_id: int
+    accurate: bool
+
+
+class ConfirmRequest(BaseModel):
+    """整批确认请求：全部上传完成后前端一次性提交。"""
+
+    conversation_id: str
+    image_confirmations: list[ImageConfirmation] = Field(default_factory=list)
+
+
+class ConfirmResponse(BaseModel):
+    """确认结果：记录写入条数与对话最终确认状态。"""
+
+    conversation_id: str
+    confirmed: bool
+    annotation_items_created: int = 0

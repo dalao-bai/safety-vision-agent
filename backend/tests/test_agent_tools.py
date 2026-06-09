@@ -57,12 +57,17 @@ def _analysis() -> AnalysisResult:
     )
 
 
-def test_tool_definitions_match_v01_set():
+def test_tool_definitions_match_v02_set():
     assert TOOL_NAMES == {
+        # v0.1 四工具
         "analyze_image",
         "explain_basis",
         "rank_risks",
         "suggest_remediation",
+        # v0.2 业务工具
+        "search_regulations",
+        "generate_report",
+        "query_history",
     }
     # Each definition has the function-tool shape Responses API expects.
     for d in TOOL_DEFINITIONS:

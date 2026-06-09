@@ -12,6 +12,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import dependencies as deps
+from app.api.auth_deps import CurrentUser, get_current_user
+from app.db import repositories as repo
 from app.db.sqlite import connect, init_db
 from app.main import create_app
 from app.services.responses_client import ResponsesResult
@@ -77,6 +79,14 @@ def client(tmp_path):
 
     app = create_app()
 
+    # Seed a fixed user so chat conversations have a valid user_id FK, and
+    # override auth so requests are authenticated as that user (v0.2 multi-user).
+    _seed_conn = connect(str(db_path))
+    init_db(_seed_conn)
+    user_id = repo.create_user(_seed_conn, "tester", "hash")
+    _seed_conn.close()
+    test_user = CurrentUser(id=user_id, username="tester")
+
     def _override_db():
         # Fresh connection per request (same as production), pointing at the
         # shared temp file. Avoids SQLite's same-thread restriction under
@@ -91,6 +101,7 @@ def client(tmp_path):
     app.dependency_overrides[deps.get_db] = _override_db
     app.dependency_overrides[deps.get_agent_client] = lambda: holder["agent"]
     app.dependency_overrides[deps.get_vlm_client] = lambda: _FakeVLMClient()
+    app.dependency_overrides[get_current_user] = lambda: test_user
 
     test_client = TestClient(app)
     yield test_client, holder

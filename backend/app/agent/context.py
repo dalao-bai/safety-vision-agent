@@ -20,6 +20,25 @@ from app.services.responses_client import ResponsesClient
 
 # How many recent messages to include as conversation history.
 _HISTORY_LIMIT = 20
+# 单条历史消息的字符上限，超出截断（避免超长分析结果挤占上下文）。
+_MESSAGE_CHAR_LIMIT = 500
+
+
+def _shape_history(messages: list) -> list[dict]:
+    """按方案修剪历史：超过窗口时保留最早一条（首次分析）+ 最近 N-1 条；
+    单条超长则截断并加 [已截断] 标记。"""
+    if len(messages) > _HISTORY_LIMIT:
+        kept = [messages[0]] + list(messages[-(_HISTORY_LIMIT - 1):])
+    else:
+        kept = list(messages)
+
+    shaped: list[dict] = []
+    for m in kept:
+        content = m["content"]
+        if len(content) > _MESSAGE_CHAR_LIMIT:
+            content = content[:_MESSAGE_CHAR_LIMIT] + " …[已截断]"
+        shaped.append({"role": m["role"], "content": content})
+    return shaped
 
 
 @dataclass
@@ -38,6 +57,7 @@ def build_context(
     vlm_client: ResponsesClient,
     vlm_model: str,
     new_image_uploaded: bool = False,
+    user_id: str | None = None,
 ) -> LoadedContext:
     """Assemble the agent input and tool context for the current turn.
 
@@ -49,6 +69,9 @@ def build_context(
     image is available, so when set we inject an explicit instruction to call
     ``analyze_image``. This keeps the core loop reliable without depending on
     provider-specific forced tool-choice.
+
+    ``user_id`` (v0.2) 启用第二层偏好记忆注入与业务工具（query_history）的用户隔离。
+    为 None 时退化为 v0.1 行为，保持向后兼容。
     """
     # Latest stored analysis (if any) so follow-up tools have something to read.
     raw_analysis = repo.get_latest_analysis(conn, conversation_id)
@@ -63,10 +86,18 @@ def build_context(
     input_items: list[dict] = [
         {"role": "system", "content": AGENT_SYSTEM_PROMPT}
     ]
+
+    # 第二层记忆：注入该用户的偏好摘要（≤100字），帮助 Agent 个性化回答。
+    if user_id is not None:
+        prefs = repo.get_preferences(conn, user_id)
+        if prefs and prefs.get("preference_summary"):
+            input_items.append({
+                "role": "system",
+                "content": f"已知该用户的关注偏好：{prefs['preference_summary']}",
+            })
+
     messages = repo.list_messages(conn, conversation_id)
-    for m in messages[-_HISTORY_LIMIT:]:
-        # Responses API accepts simple role/content text messages.
-        input_items.append({"role": m["role"], "content": m["content"]})
+    input_items.extend(_shape_history(messages))
 
     # The model can't see images directly — tell it one is ready to analyze.
     if new_image_uploaded and image_path:
@@ -82,6 +113,8 @@ def build_context(
         vlm_client=vlm_client,
         vlm_model=vlm_model,
         user_question=user_message,
+        conn=conn,
+        user_id=user_id,
     )
 
     return LoadedContext(

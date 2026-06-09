@@ -111,6 +111,9 @@ def run_turn(
     vlm_model: str,
     max_iterations: int = 5,
     new_image_uploaded: bool = False,
+    user_id: str | None = None,
+    regulation_search=None,
+    report_scheduler=None,
 ) -> OrchestratorResult:
     """Run one bounded tool-calling turn and return the assistant answer.
 
@@ -118,13 +121,20 @@ def run_turn(
     so it appears in the loaded history. ``new_image_uploaded`` tells the
     context builder that an image arrived this turn so the Agent is instructed
     to analyze it (the model cannot see images directly).
+
+    ``user_id`` (v0.2) 启用第二层偏好记忆与按用户隔离的历史查询。
+    ``regulation_search`` / ``report_scheduler`` 是路由层注入的业务工具回调；
+    为 None 时对应工具优雅降级（返回 available=False）。
     """
     loaded = build_context(
         conn, conversation_id, user_message, vlm_client, vlm_model,
-        new_image_uploaded=new_image_uploaded,
+        new_image_uploaded=new_image_uploaded, user_id=user_id,
     )
     input_items = loaded.input_items
     tool_ctx = loaded.tool_context
+    # 注入业务工具回调（build_context 已填好 conn/user_id）。
+    tool_ctx.regulation_search = regulation_search
+    tool_ctx.report_scheduler = report_scheduler
 
     tool_summaries: list[ToolCallSummary] = []
 

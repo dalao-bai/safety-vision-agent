@@ -71,3 +71,60 @@ CREATE INDEX IF NOT EXISTS idx_images_conversation ON uploaded_images(conversati
 CREATE INDEX IF NOT EXISTS idx_analysis_conversation ON analysis_results(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_conversation ON tool_calls(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_model_responses_conversation ON model_responses(conversation_id);
+
+-- ============================================================
+-- v0.2 新增表和索引
+-- ============================================================
+
+-- 用户认证表
+CREATE TABLE IF NOT EXISTS users (
+    id           TEXT PRIMARY KEY,          -- uuid4
+    username     TEXT NOT NULL UNIQUE,
+    api_key_hash TEXT NOT NULL,             -- 哈希值，绝不存明文
+    created_at   TEXT NOT NULL
+);
+
+-- 用户偏好（每用户一行，对话结束后异步更新）
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id            TEXT PRIMARY KEY,
+    preference_summary TEXT,               -- ≤100字自然语言摘要
+    focus_hazard_types TEXT,               -- JSON 数组
+    frequent_questions TEXT,               -- JSON 数组
+    updated_at         TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 用户隐患统计（用户确认准确后 upsert）
+CREATE TABLE IF NOT EXISTS user_hazard_stats (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id          TEXT    NOT NULL,
+    hazard_type      TEXT    NOT NULL,
+    risk_level       TEXT    NOT NULL,     -- 'high' | 'medium' | 'low'
+    occurrence_count INTEGER NOT NULL DEFAULT 1,
+    last_seen_at     TEXT    NOT NULL,
+    conversation_ids TEXT    NOT NULL DEFAULT '[]', -- JSON 数组
+    UNIQUE (user_id, hazard_type, risk_level),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 规范文件元数据（向量存 ChromaDB，文件元数据存这里）
+CREATE TABLE IF NOT EXISTS regulation_files (
+    id            TEXT PRIMARY KEY,        -- uuid4
+    filename      TEXT NOT NULL,           -- 服务端存储文件名
+    original_name TEXT NOT NULL,           -- 用户上传的原始文件名
+    file_path     TEXT NOT NULL,           -- 服务端完整路径
+    file_type     TEXT NOT NULL,           -- 'pdf' | 'docx'
+    chunk_count   INTEGER NOT NULL DEFAULT 0,
+    deleted_at    TEXT,                    -- NULL 表示未删除（软删除）
+    created_at    TEXT NOT NULL
+);
+
+-- conversations 新增列通过 sqlite.py init_db() 的 Python 侧 ALTER TABLE 完成
+-- 原因：SQLite 不支持 ADD COLUMN IF NOT EXISTS，无法写成幂等 DDL
+-- idx_conversations_user_date 同样在 Python 侧创建，依赖 user_id 列先存在
+
+CREATE INDEX IF NOT EXISTS idx_user_hazard_stats_user
+    ON user_hazard_stats(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_regulation_files_deleted
+    ON regulation_files(deleted_at);
