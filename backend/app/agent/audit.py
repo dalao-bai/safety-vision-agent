@@ -54,6 +54,8 @@ class AuditCallbackHandler(BaseCallbackHandler):
                 ToolCallSummary(
                     tool_name=tool_name,
                     status="success",
+                    input=input_data,
+                    output=output_as_dict,
                     duration_ms=duration_ms,
                 )
             )
@@ -82,6 +84,8 @@ class AuditCallbackHandler(BaseCallbackHandler):
                 ToolCallSummary(
                     tool_name=tool_name,
                     status="error",
+                    input=input_data,
+                    error=str(error),
                     duration_ms=duration_ms,
                 )
             )
@@ -89,9 +93,27 @@ class AuditCallbackHandler(BaseCallbackHandler):
             pass
 
     def on_chat_model_start(self, serialized, messages, run_id, tags=None, **kwargs):
+        # Record start time unconditionally — no tag guard needed.
         try:
-            if "agent-model" in (tags or []):
-                self._llm_starts[str(run_id)] = time.monotonic()
+            self._llm_starts[str(run_id)] = time.monotonic()
+        except Exception:
+            pass
+
+    def on_llm_error(self, error, run_id, tags=None, **kwargs):
+        try:
+            key = str(run_id)
+            if key not in self._llm_starts:
+                return
+            start_time = self._llm_starts.pop(key)
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            repo.save_model_response(
+                self.conn,
+                self.conversation_id,
+                model_role="agent",
+                status="error",
+                error=str(error),
+                duration_ms=duration_ms,
+            )
         except Exception:
             pass
 

@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS model_responses (
     status          TEXT NOT NULL,          -- 'success' | 'error'
     raw_text        TEXT,                   -- raw response payload (JSON or text)
     error           TEXT,
+    duration_ms     INTEGER,
     created_at      TEXT NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
 );

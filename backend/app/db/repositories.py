@@ -31,18 +31,6 @@ def _loads(value: str | None) -> Any:
 
 # --- conversations ---------------------------------------------------------
 
-def create_conversation(conn: sqlite3.Connection, conversation_id: str | None = None) -> str:
-    """Create a conversation and return its id. Generates a UUID if none given."""
-    cid = conversation_id or str(uuid.uuid4())
-    now = _now()
-    conn.execute(
-        "INSERT INTO conversations (id, created_at, updated_at) VALUES (?, ?, ?)",
-        (cid, now, now),
-    )
-    conn.commit()
-    return cid
-
-
 def get_conversation(conn: sqlite3.Connection, conversation_id: str) -> sqlite3.Row | None:
     cur = conn.execute(
         "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
@@ -196,12 +184,13 @@ def save_model_response(
     provider_id: str | None = None,
     raw_text: str | None = None,
     error: str | None = None,
+    duration_ms: int | None = None,
 ) -> int:
     cur = conn.execute(
         "INSERT INTO model_responses "
-        "(conversation_id, model_role, provider_id, status, raw_text, error, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (conversation_id, model_role, provider_id, status, raw_text, error, _now()),
+        "(conversation_id, model_role, provider_id, status, raw_text, error, duration_ms, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (conversation_id, model_role, provider_id, status, raw_text, error, duration_ms, _now()),
     )
     conn.commit()
     return int(cur.lastrowid)
@@ -334,12 +323,23 @@ def upsert_hazard_stat(
 
 
 def get_hazard_stats_by_user(
-    conn: sqlite3.Connection, user_id: str
+    conn: sqlite3.Connection,
+    user_id: str,
+    start: str | None = None,
+    end: str | None = None,
 ) -> list[dict[str, Any]]:
-    cur = conn.execute(
-        "SELECT * FROM user_hazard_stats WHERE user_id = ? ORDER BY occurrence_count DESC",
-        (user_id,),
-    )
+    """返回用户的隐患统计，按出现次数降序。start/end 为 ISO-8601 字符串，
+    对 last_seen_at 列做范围过滤，均可选。"""
+    sql = "SELECT * FROM user_hazard_stats WHERE user_id = ?"
+    params: list = [user_id]
+    if start:
+        sql += " AND last_seen_at >= ?"
+        params.append(start)
+    if end:
+        sql += " AND last_seen_at <= ?"
+        params.append(end)
+    sql += " ORDER BY occurrence_count DESC"
+    cur = conn.execute(sql, params)
     result = []
     for row in cur.fetchall():
         item = dict(row)

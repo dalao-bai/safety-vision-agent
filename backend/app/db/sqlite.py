@@ -52,6 +52,15 @@ def init_db(conn: sqlite3.Connection) -> None:
             conn.execute(ddl)
     conn.commit()
 
+    # model_responses.duration_ms migration (added in v0.2)
+    mr_cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(model_responses)").fetchall()
+    }
+    if "duration_ms" not in mr_cols:
+        conn.execute("ALTER TABLE model_responses ADD COLUMN duration_ms INTEGER")
+    conn.commit()
+
     # user_id 列就绪后才能建这个索引（schema.sql 阶段列尚不存在）
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_conversations_user_date "
