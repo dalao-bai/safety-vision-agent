@@ -205,6 +205,11 @@ def make_tools(
         try:
             if report_scheduler is None:
                 return {"available": False, "message": "报告生成能力当前不可用。"}
+            if not start_date and not end_date:
+                return {
+                    "available": False,
+                    "message": "请先与用户确认报告的时间范围（start_date / end_date），再调用本工具。",
+                }
             task_id = report_scheduler(start_date or None, end_date or None)
             return {
                 "available": True,
@@ -220,7 +225,12 @@ def make_tools(
         try:
             if conn is None or user_id is None:
                 return {"available": False, "message": "历史查询能力当前不可用。"}
-            stats = repo.get_hazard_stats_by_user(conn, user_id)
+            stats = repo.get_hazard_stats_by_user(
+                conn,
+                user_id,
+                start=start_date or None,
+                end=end_date or None,
+            )
             return {
                 "available": True,
                 "hazard_stats": [

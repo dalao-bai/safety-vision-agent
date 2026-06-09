@@ -30,11 +30,11 @@ from fastapi import (
 from app.agent.orchestrator import run_turn
 from app.api.auth_deps import CurrentUser, get_current_user
 from app.api.dependencies import (
-    get_agent_client,
     get_app_settings,
     get_db,
     get_vlm_client,
 )
+
 from app.api.routes.report import _run_report
 from app.core.config import Settings
 from app.db import repositories as repo
@@ -55,7 +55,6 @@ async def chat(
     image: UploadFile | None = File(None),
     conn: sqlite3.Connection = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
-    agent_client: ResponsesClient = Depends(get_agent_client),
     vlm_client: ResponsesClient = Depends(get_vlm_client),
     user: CurrentUser = Depends(get_current_user),
 ) -> ChatResponse:
@@ -132,10 +131,9 @@ async def chat(
             conn,
             cid,
             message,
-            agent_client,
-            settings.agent_model,
             vlm_client,
             settings.vlm_model,
+            settings,
             max_iterations=settings.max_tool_iterations,
             new_image_uploaded=stored is not None,
             user_id=user.id,

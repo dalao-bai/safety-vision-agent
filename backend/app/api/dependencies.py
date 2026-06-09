@@ -33,19 +33,9 @@ def get_db() -> Iterator[sqlite3.Connection]:
 
 
 @lru_cache(maxsize=1)
-def _agent_client() -> ResponsesClient:
-    s = get_settings()
-    return ResponsesClient(s.openai_api_base_url, s.openai_api_key)
-
-
-@lru_cache(maxsize=1)
 def _vlm_client() -> ResponsesClient:
     s = get_settings()
     return ResponsesClient(s.openai_api_base_url, s.openai_api_key)
-
-
-def get_agent_client() -> ResponsesClient:
-    return _agent_client()
 
 
 def get_vlm_client() -> ResponsesClient:

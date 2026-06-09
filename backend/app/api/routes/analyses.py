@@ -21,7 +21,7 @@ from app.core.config import Settings
 from app.db import annotation as anno
 from app.db import repositories as repo
 from app.db.sqlite import connect
-from app.models.schemas import ConfirmRequest, ConfirmResponse
+from app.models.schemas import AnalysisResult, ConfirmRequest, ConfirmResponse
 from app.services.preference_updater import build_summarize_fn, update_user_preferences
 from app.services.responses_client import ResponsesClient
 
@@ -60,17 +60,21 @@ def confirm_analyses(
     annotation_created = 0
 
     for item in body.image_confirmations:
-        analysis = repo.get_analysis_for_image(conn, item.image_id)
+        raw_analysis = repo.get_analysis_for_image(conn, item.image_id)
         if item.accurate:
             # 第三层记忆：遍历隐患做跨对话统计 upsert。
-            if analysis:
-                for hazard in analysis.get("hazards", []) or []:
-                    name = hazard.get("name")
-                    risk = hazard.get("risk_level")
-                    if name and risk:
-                        repo.upsert_hazard_stat(
-                            conn, user.id, name, risk, body.conversation_id
-                        )
+            # Validate through AnalysisResult to guard against schema drift.
+            if raw_analysis:
+                try:
+                    validated = AnalysisResult.model_validate(raw_analysis)
+                    hazards = validated.hazards
+                except Exception:
+                    hazards = []
+                for hazard in hazards:
+                    repo.upsert_hazard_stat(
+                        conn, user.id, hazard.name, hazard.risk_level.value, body.conversation_id
+                    )
+        analysis = raw_analysis  # keep reference for annotation branch below
         else:
             all_accurate = False
             # 不准确：整图写 annotation.db。image_id 重复（UNIQUE）则跳过。
