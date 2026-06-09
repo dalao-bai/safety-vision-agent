@@ -90,9 +90,11 @@ def run_turn(
     #    always the leading system message and never appears mid-list.
     agent_executor = create_react_agent(llm, tools, state_modifier=ctx.system_prompt)
 
-    # Each tool call occupies 2 graph steps (invoke + return), plus 1 for the
-    # final answer step.
-    recursion_limit = max_iterations * 2 + 1
+    # Each tool call occupies 2 graph steps (agent node + tool node), plus 1 for
+    # the final answer node after the last tool, plus 1 extra to avoid the
+    # LangGraph internal "remaining_steps < 2" early-exit that silently returns
+    # an English-language truncation message instead of raising GraphRecursionError.
+    recursion_limit = max_iterations * 2 + 2
     config = {"callbacks": [audit], "recursion_limit": recursion_limit}
 
     # 5. Invoke the agent with history-only messages (Human/AIMessage, no System).
@@ -123,6 +125,11 @@ def run_turn(
     answer = final.content if isinstance(final.content, str) else str(final.content)
     if not answer:
         answer = "(模型未返回文本)"
+
+    # LangGraph emits this English string when remaining_steps < 2 instead of
+    # raising GraphRecursionError. Treat it as a step-limit hit.
+    if answer == "Sorry, need more steps to process this request.":
+        answer = "抱歉，处理这个请求时步骤过多，已停止。请尝试更具体的提问。"
 
     # 7. Persist the assistant turn.
     repo.add_message(conn, conversation_id, "assistant", answer)

@@ -124,7 +124,7 @@ def test_analyze_image_calls_vlm_and_returns_summary(conn, cid, tmp_path):
     valid = json.dumps(_analysis_payload(), ensure_ascii=False)
     tools = _tools(conn, cid, vlm_text=valid)
 
-    result = tools["analyze_image"].invoke({"question": ""})
+    result = json.loads(tools["analyze_image"].invoke({"question": ""}))
 
     assert result["available"] is True
     assert result["hazard_count"] == 3
@@ -136,7 +136,7 @@ def test_analyze_image_calls_vlm_and_returns_summary(conn, cid, tmp_path):
 
 def test_analyze_image_without_image_reports_unavailable(conn, cid):
     tools = _tools(conn, cid)
-    result = tools["analyze_image"].invoke({"question": ""})
+    result = json.loads(tools["analyze_image"].invoke({"question": ""}))
     assert result["available"] is False
 
 
@@ -148,7 +148,7 @@ def test_explain_basis_returns_all_bases(conn, cid):
     repo.save_analysis_result(conn, cid, _analysis_payload())
     tools = _tools(conn, cid)
 
-    result = tools["explain_basis"].invoke({"hazard_name": ""})
+    result = json.loads(tools["explain_basis"].invoke({"hazard_name": ""}))
 
     assert result["available"] is True
     assert len(result["bases"]) == 3
@@ -161,7 +161,7 @@ def test_explain_basis_for_named_hazard(conn, cid):
     repo.save_analysis_result(conn, cid, _analysis_payload())
     tools = _tools(conn, cid)
 
-    result = tools["explain_basis"].invoke({"hazard_name": "临边无防护"})
+    result = json.loads(tools["explain_basis"].invoke({"hazard_name": "临边无防护"}))
 
     assert result["available"] is True
     assert len(result["bases"]) == 1
@@ -170,7 +170,7 @@ def test_explain_basis_for_named_hazard(conn, cid):
 
 def test_explain_basis_without_analysis_reports_unavailable(conn, cid):
     tools = _tools(conn, cid)
-    result = tools["explain_basis"].invoke({"hazard_name": ""})
+    result = json.loads(tools["explain_basis"].invoke({"hazard_name": ""}))
     assert result["available"] is False
     assert "还没有" in result["message"]
 
@@ -183,7 +183,7 @@ def test_rank_risks_orders_by_severity_then_confidence(conn, cid):
     repo.save_analysis_result(conn, cid, _analysis_payload())
     tools = _tools(conn, cid)
 
-    result = tools["rank_risks"].invoke({})
+    result = json.loads(tools["rank_risks"].invoke({}))
 
     ranked = result["ranked"]
     # critical > high > low
@@ -193,7 +193,7 @@ def test_rank_risks_orders_by_severity_then_confidence(conn, cid):
 
 def test_rank_risks_without_analysis_reports_unavailable(conn, cid):
     tools = _tools(conn, cid)
-    result = tools["rank_risks"].invoke({})
+    result = json.loads(tools["rank_risks"].invoke({}))
     assert result["available"] is False
     assert "还没有" in result["message"]
 
@@ -206,7 +206,7 @@ def test_suggest_remediation_returns_all(conn, cid):
     repo.save_analysis_result(conn, cid, _analysis_payload())
     tools = _tools(conn, cid)
 
-    result = tools["suggest_remediation"].invoke({"hazard_name": ""})
+    result = json.loads(tools["suggest_remediation"].invoke({"hazard_name": ""}))
 
     assert result["available"] is True
     assert len(result["remediations"]) == 3
@@ -217,7 +217,7 @@ def test_suggest_remediation_for_named_hazard(conn, cid):
     repo.save_analysis_result(conn, cid, _analysis_payload())
     tools = _tools(conn, cid)
 
-    result = tools["suggest_remediation"].invoke({"hazard_name": "材料堆放杂乱"})
+    result = json.loads(tools["suggest_remediation"].invoke({"hazard_name": "材料堆放杂乱"}))
 
     assert result["available"] is True
     assert len(result["remediations"]) == 1
@@ -226,7 +226,7 @@ def test_suggest_remediation_for_named_hazard(conn, cid):
 
 def test_suggest_remediation_without_analysis_reports_unavailable(conn, cid):
     tools = _tools(conn, cid)
-    result = tools["suggest_remediation"].invoke({"hazard_name": ""})
+    result = json.loads(tools["suggest_remediation"].invoke({"hazard_name": ""}))
     assert result["available"] is False
     assert "还没有" in result["message"]
 
@@ -240,7 +240,7 @@ def test_search_regulations_returns_hits(conn, cid):
         return [{"text": "安全带应定期检查", "original_name": "建设规范.pdf"}]
 
     tools = _tools(conn, cid, regulation_search=_fake_search)
-    result = tools["search_regulations"].invoke({"query": "安全带"})
+    result = json.loads(tools["search_regulations"].invoke({"query": "安全带"}))
 
     assert result["available"] is True
     assert len(result["results"]) == 1
@@ -249,7 +249,7 @@ def test_search_regulations_returns_hits(conn, cid):
 
 def test_search_regulations_without_callback_reports_unavailable(conn, cid):
     tools = _tools(conn, cid)
-    result = tools["search_regulations"].invoke({"query": "安全带"})
+    result = json.loads(tools["search_regulations"].invoke({"query": "安全带"}))
     assert result["available"] is False
 
 
@@ -262,7 +262,7 @@ def test_generate_report_returns_task_id(conn, cid):
         return "task-abc"
 
     tools = _tools(conn, cid, report_scheduler=_fake_scheduler)
-    result = tools["generate_report"].invoke({"start_date": "2024-01-01", "end_date": "2024-12-31"})
+    result = json.loads(tools["generate_report"].invoke({"start_date": "2024-01-01", "end_date": "2024-12-31"}))
 
     assert result["available"] is True
     assert result["task_id"] == "task-abc"
@@ -274,7 +274,7 @@ def test_generate_report_without_dates_returns_unavailable(conn, cid):
         return "task-abc"
 
     tools = _tools(conn, cid, report_scheduler=_fake_scheduler)
-    result = tools["generate_report"].invoke({"start_date": "", "end_date": ""})
+    result = json.loads(tools["generate_report"].invoke({"start_date": "", "end_date": ""}))
 
     assert result["available"] is False
     assert "时间范围" in result["message"]
@@ -282,7 +282,7 @@ def test_generate_report_without_dates_returns_unavailable(conn, cid):
 
 def test_generate_report_without_callback_reports_unavailable(conn, cid):
     tools = _tools(conn, cid)
-    result = tools["generate_report"].invoke({"start_date": "2024-01-01", "end_date": "2024-12-31"})
+    result = json.loads(tools["generate_report"].invoke({"start_date": "2024-01-01", "end_date": "2024-12-31"}))
     assert result["available"] is False
 
 
@@ -304,7 +304,7 @@ def test_query_history_returns_stats(conn, cid):
     )
     tools = {t.name: t for t in tool_list}
 
-    result = tools["query_history"].invoke({"start_date": "", "end_date": ""})
+    result = json.loads(tools["query_history"].invoke({"start_date": "", "end_date": ""}))
 
     assert result["available"] is True
     assert len(result["hazard_stats"]) == 1
@@ -313,5 +313,5 @@ def test_query_history_returns_stats(conn, cid):
 
 def test_query_history_without_user_id_reports_unavailable(conn, cid):
     tools = _tools(conn, cid)
-    result = tools["query_history"].invoke({"start_date": "", "end_date": ""})
+    result = json.loads(tools["query_history"].invoke({"start_date": "", "end_date": ""}))
     assert result["available"] is False

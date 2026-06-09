@@ -40,23 +40,20 @@ Primary artifact:
 
 - `docs/requirements/v0.1-mvp.md`
 
-## v0.2: Reliability And Error Handling
+## v0.2: Multi-User Enterprise Backend
 
-Goal: make v0.1 robust enough for repeated local use.
+Goal: extend v0.1 into an enterprise-internal system with user isolation, a regulation knowledge base, and compliance reporting.
 
-Possible additions:
+Delivered:
 
-- Strong JSON schema validation.
-- Retry or repair path for malformed VLM output.
-- Clear model/API error display.
-- Better loading states.
-- Safer image size and MIME validation.
-- Config validation at startup.
-- More focused backend and frontend tests.
-
-Non-goal:
-
-- Do not add large new product features yet.
+- Multi-user authentication (username + JWT, user data isolation).
+- Regulation library — upload PDF/Word files, semantic search via ChromaDB + embeddings.
+- Compliance report generation (.docx, async background task).
+- Analysis confirmation flow — per-image accuracy checkbox; inaccurate images written to annotation.db for relabeling.
+- History query — cross-conversation hazard statistics per user.
+- Three-layer memory: sliding window (in-conversation), user preference summary (cross-conversation), hazard stats (statistical).
+- Agent orchestration migrated to LangGraph `create_react_agent` with 7 tools and full audit callbacks.
+- 154 backend tests passing.
 
 ## v0.3: Multi-Image Support
 

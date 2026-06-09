@@ -38,16 +38,18 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(schema_sql)
     conn.commit()
 
-    # conversations 新增列迁移（SQLite 不支持 ADD COLUMN IF NOT EXISTS，Python 侧判断）
+    # conversations migration: schema.sql now includes user_id and confirmed
+    # columns for fresh DBs. For existing DBs that pre-date that DDL change,
+    # add any missing columns via ALTER TABLE (SQLite has no ADD COLUMN IF NOT EXISTS).
     existing_cols = {
         row[1]
         for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
     }
-    new_cols = [
+    conv_migrations = [
         ("user_id",   "ALTER TABLE conversations ADD COLUMN user_id TEXT REFERENCES users(id)"),
         ("confirmed", "ALTER TABLE conversations ADD COLUMN confirmed INTEGER DEFAULT NULL"),
     ]
-    for col_name, ddl in new_cols:
+    for col_name, ddl in conv_migrations:
         if col_name not in existing_cols:
             conn.execute(ddl)
     conn.commit()
@@ -61,7 +63,18 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE model_responses ADD COLUMN duration_ms INTEGER")
     conn.commit()
 
-    # user_id 列就绪后才能建这个索引（schema.sql 阶段列尚不存在）
+    # regulation_files.uploaded_by migration (added for ownership checks)
+    rf_cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(regulation_files)").fetchall()
+    }
+    if "uploaded_by" not in rf_cols:
+        conn.execute(
+            "ALTER TABLE regulation_files ADD COLUMN uploaded_by TEXT REFERENCES users(id)"
+        )
+    conn.commit()
+
+    # user_id 列就绪后才能建这个索引（schema.sql 阶段列尚不存在于旧库）
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_conversations_user_date "
         "ON conversations(user_id, created_at)"

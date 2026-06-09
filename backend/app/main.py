@@ -1,7 +1,7 @@
-"""FastAPI application entry point for the v0.1 Agent backend.
+"""FastAPI application entry point for the v0.2 Agent backend.
 
 Constructs the app, validates configuration at startup, enables CORS for the
-local frontend, and registers the chat router.
+local frontend, and registers all routers.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    # v0.1 对话端点 + v0.2 业务端点。
+    # v0.2 endpoints.
     app.include_router(chat_router)
     app.include_router(auth_router)
     app.include_router(analyses_router)

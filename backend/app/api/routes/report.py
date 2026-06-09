@@ -104,10 +104,9 @@ def download(
     user: CurrentUser = Depends(get_current_user),
 ) -> FileResponse:
     task = report.get_task(task_id)
-    if task is None:
+    # Return 404 for both unknown and foreign tasks — do not leak existence via 403.
+    if task is None or task["user_id"] != user.id:
         raise HTTPException(status_code=404, detail="unknown task_id")
-    if task["user_id"] != user.id:
-        raise HTTPException(status_code=403, detail="not your report")
     if task["status"] != "done":
         raise HTTPException(status_code=409, detail=f"report not ready: {task['status']}")
     return FileResponse(

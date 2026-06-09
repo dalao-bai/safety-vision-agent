@@ -359,14 +359,15 @@ def create_regulation_file(
     file_path: str,
     file_type: str,
     chunk_count: int = 0,
+    uploaded_by: str | None = None,
 ) -> str:
     """注册规范文件元数据，返回 id（uuid4）。"""
     fid = str(uuid.uuid4())
     conn.execute(
         "INSERT INTO regulation_files "
-        "(id, filename, original_name, file_path, file_type, chunk_count, deleted_at, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
-        (fid, filename, original_name, file_path, file_type, chunk_count, _now()),
+        "(id, filename, original_name, file_path, file_type, chunk_count, uploaded_by, deleted_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+        (fid, filename, original_name, file_path, file_type, chunk_count, uploaded_by, _now()),
     )
     conn.commit()
     return fid

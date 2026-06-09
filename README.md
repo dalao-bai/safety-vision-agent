@@ -1,30 +1,62 @@
-# 工地安全隐患识别 Agent (v0.1)
+# 工地安全隐患识别 Agent (v0.2)
 
-A local single-user MVP that identifies construction-site safety hazards from an uploaded image using a real VLM, then answers follow-up questions (basis, risk ranking, remediation) via model-driven tool calling.
+Multi-user construction-site safety hazard detection system. Upload one or more photos, get structured hazard analysis with risk ranking and remediation advice, query a semantic regulation library, and generate compliance reports — all through a conversational agent interface.
 
-This is **v0.1**: the smallest useful end-to-end Agent loop. It is local-only software, **not a production safety-compliance system** and not a replacement for professional safety inspection.
+This is **v0.2**: production-oriented multi-user backend. It is enterprise-internal software, **not a legal safety-compliance system** and not a replacement for professional safety inspection.
 
 ## Stack
 
-- Backend: FastAPI + SQLite, OpenAI-compatible Responses API
-- Frontend: React + Vite (TypeScript)
+| Layer | Technology |
+| --- | --- |
+| Backend | FastAPI + SQLite |
+| Agent orchestration | LangGraph `create_react_agent` (LangChain v1 / LangGraph 1.2) |
+| Image analysis | OpenAI-compatible VLM via Responses API |
+| Semantic search | ChromaDB + embedding model |
+| Auth | Username login + JWT |
+| Report generation | python-docx |
+| Frontend | React + Vite (TypeScript) |
 
 ## How It Works
 
-1. You upload one construction-site image and ask a question.
-2. The backend stores the image, creates a conversation, and calls the **Agent model** with four tools.
-3. The Agent model calls `analyze_image`, which sends the image to the **VLM model** and forces structured hazard JSON (validated server-side).
-4. Follow-up questions reuse the saved analysis through `explain_basis`, `rank_risks`, and `suggest_remediation` — no re-analysis needed.
+```
+React/Vite UI ──> FastAPI (JWT auth) ──> LangGraph Agent
+                        │                      │
+                        │         ┌────────────┼────────────────────┐
+                        │         │            │                    │
+                        │    analyze_image  search_regulations  generate_report
+                        │    explain_basis  query_history
+                        │    rank_risks
+                        │    suggest_remediation
+                        │
+                        ├── SQLite (messages / analyses / tool calls / audit)
+                        ├── ChromaDB (regulation embeddings)
+                        ├── annotation.db (images flagged for re-labeling)
+                        └── runtime/uploads/{user_id}/
+```
 
-```
-React/Vite UI ──> FastAPI ──> Agent orchestrator ──> Agent model (tool calling)
-                     │                  │
-                     │                  ├─ analyze_image ──> VLM model ──> structured JSON
-                     │                  ├─ explain_basis / rank_risks / suggest_remediation
-                     │                  │   (deterministic transforms over saved analysis)
-                     ▼                  ▼
-              SQLite (full local audit) + runtime/uploads/
-```
+1. User logs in with a username + API key; backend issues a JWT.
+2. User uploads a construction-site photo with a message.
+3. The LangGraph agent receives 7 tools (bound via closure to the current user's context).
+4. `analyze_image` sends the image to the VLM and persists structured hazard JSON.
+5. Follow-up questions reuse the saved analysis (`explain_basis`, `rank_risks`, `suggest_remediation`).
+6. `search_regulations` does semantic retrieval over uploaded PDF/Word regulation files.
+7. `generate_report` triggers an async background task that produces a `.docx` compliance report.
+8. `query_history` aggregates the user's hazard statistics across past conversations.
+9. Every model call and tool invocation is persisted for audit.
+
+### Three-layer memory
+
+| Layer | Scope | Mechanism |
+| --- | --- | --- |
+| In-conversation | Current conversation | Sliding window (last 20 messages, first message kept) |
+| User preferences | Cross-conversation | LLM-generated preference summary injected as system context |
+| Hazard statistics | Cross-conversation | Aggregated `user_hazard_stats` table, updated on analysis confirmation |
+
+### Analysis confirmation flow
+
+After all images are analyzed, the frontend shows a per-image checklist. The user confirms accuracy via `POST /api/analyses/confirm`:
+- All accurate → triggers async preference update
+- Any inaccurate → those images are written to `annotation.db` for relabeling
 
 ## Configuration
 
@@ -32,14 +64,23 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `OPENAI_API_BASE_URL` | yes | OpenAI-compatible Responses API base URL |
+| `OPENAI_API_BASE_URL` | yes | OpenAI-compatible API base URL |
 | `OPENAI_API_KEY` | yes | API key |
-| `VLM_MODEL` | yes | Model used for image hazard analysis (must accept image input) |
-| `AGENT_MODEL` | yes | Model used for tool selection and final answers (must support function calling) |
-| `DATABASE_PATH` | no | SQLite file path (default `runtime/agent.db`) |
+| `VLM_MODEL` | yes | Model for image analysis (must accept image input) |
+| `AGENT_MODEL` | yes | Model for tool selection and final answers (must support function calling) |
+| `JWT_SECRET` | yes | Secret for signing JWTs — use a long random string |
+| `JWT_ALGORITHM` | no | JWT algorithm (default `HS256`) |
+| `JWT_EXPIRE_MINUTES` | no | Token lifetime in minutes (default `1440`) |
+| `EMBEDDING_MODEL` | no | Embedding model for regulation search (default `text-embedding-3-small`) |
+| `CHROMA_DIR` | no | ChromaDB persistence directory (default `runtime/chroma`) |
+| `REGULATION_DIR` | no | Uploaded regulation files directory (default `runtime/regulations`) |
+| `MAX_REGULATION_BYTES` | no | Max regulation file size (default 20 MiB) |
+| `DATABASE_PATH` | no | Main SQLite file (default `runtime/agent.db`) |
+| `ANNOTATION_DB_PATH` | no | Annotation SQLite file (default `runtime/annotation.db`) |
 | `UPLOAD_DIR` | no | Uploaded image directory (default `runtime/uploads`) |
-| `MAX_IMAGE_BYTES` | no | Max upload size (default 10 MiB) |
-| `MAX_TOOL_ITERATIONS` | no | Agent tool-loop cap (default 5) |
+| `REPORT_DIR` | no | Generated report output directory (default `runtime/reports`) |
+| `MAX_IMAGE_BYTES` | no | Max image upload size (default 10 MiB) |
+| `MAX_TOOL_ITERATIONS` | no | Agent tool-loop cap (default `5`) |
 
 Missing or invalid required values fail at startup with a clear message.
 
@@ -50,8 +91,8 @@ Missing or invalid required values fail at startup with a clear message.
 ```bash
 cd backend
 pip install -r requirements.txt
-pytest                                   # run tests (no network needed; model calls are mocked)
-uvicorn app.main:app --reload            # serves on http://127.0.0.1:8000
+pytest                        # 154 tests, no network needed — model calls are mocked
+uvicorn app.main:app --reload  # http://127.0.0.1:8000
 ```
 
 ### Frontend
@@ -59,37 +100,57 @@ uvicorn app.main:app --reload            # serves on http://127.0.0.1:8000
 ```bash
 cd frontend
 npm install
-npm run dev                              # http://localhost:5173 (proxies /api to the backend)
-npm test                                 # run tests
+npm run dev   # http://localhost:5173 (proxies /api to the backend)
+npm test
 ```
 
-Run both, open http://localhost:5173, upload an image, and ask "请识别这张图的安全隐患". Then try follow-ups: "判断依据是什么?", "哪个隐患最严重?", "应该怎么整改?".
+Run both, open http://localhost:5173, log in, upload an image, and ask "请识别这张图的安全隐患". Follow-ups: "判断依据是什么?", "哪个隐患最严重?", "应该怎么整改?", "有哪些规范要求?", "生成本月报告".
+
+## API Overview
+
+```
+POST   /api/auth/login                  { username, api_key } → { token, user_id }
+
+POST   /api/chat                        multipart — main conversation endpoint
+POST   /api/analyses/confirm            { conversation_id, image_confirmations }
+
+GET    /api/regulations                 list uploaded regulation files
+POST   /api/regulations/upload          upload PDF or Word regulation file
+DELETE /api/regulations/{id}            soft-delete a regulation file
+
+GET    /api/history                     ?start=&end= — hazard history for current user
+GET    /api/annotation/export           CSV export of images flagged for relabeling
+
+POST   /api/report/generate             { start_date, end_date } → { task_id }
+GET    /api/report/status/{task_id}     poll report generation status + download URL
+```
 
 ## Project Structure
 
 ```
 backend/
   app/
-    agent/        orchestrator (tool-calling loop), context assembly, tools, prompts
-    api/          FastAPI routes + dependency injection
-    core/         configuration
-    db/           SQLite schema, connection, repositories
-    models/       Pydantic domain schemas
-    services/     image storage, Responses API client, VLM analyzer
-  tests/          backend test suite
+    agent/          LangGraph orchestrator, context assembly, tools (7), prompts, audit callback
+    api/            FastAPI routes, dependency injection, JWT auth
+    core/           configuration
+    db/             SQLite schema, connection, repositories, annotation.db layer
+    models/         Pydantic domain schemas
+    services/       image storage, VLM analyzer, regulation store (ChromaDB),
+                    report generator (docx), preference updater, security utils
+  tests/            154 backend tests
 frontend/
-  src/            React app, API helper, shared types
-runtime/          local image uploads + SQLite DB (git-ignored)
-docs/             requirements, plans, roadmap
+  src/              React app, API helper, shared types
+runtime/            uploads, databases, chroma, reports (git-ignored)
+docs/               requirements, plans, design documents
 ```
 
-## Limitations & Data Handling (v0.1)
+## Data Handling
 
-- **Local single-user only.** No authentication, no user isolation, no multi-tenancy.
-- **Full local audit memory.** SQLite stores conversations, messages, image metadata, structured analysis, every tool call, and raw VLM/Agent responses (including errors) for debugging. Uploaded images are kept on disk under `runtime/`.
-- No retention, redaction, or privacy controls yet — do not point this at real user data or deploy it. These are deferred to a later production-oriented version (see `docs/roadmap.md`).
-- The Agent reports hazards based only on visible image evidence and does not claim legal/regulatory compliance.
+- **User isolation**: all queries are scoped to `user_id` from the JWT. Conversations, images, analyses, and history are per-user. Regulation files are global (shared).
+- **Local storage**: SQLite stores conversations, messages, image metadata, structured hazard analysis, every tool call with timing, and raw model responses. Images are stored under `runtime/uploads/{user_id}/`.
+- **Annotation data**: images flagged as incorrectly analyzed are written to `runtime/annotation.db` for later re-labeling and model improvement.
+- **No external data transmission** beyond the configured model API endpoint.
 
-## Status & Roadmap
+## Status
 
-v0.1 complete. See `docs/plans/2026-06-05-001-feat-v01-agent-mvp-plan.md` for the implementation plan and `docs/roadmap.md` for later versions (multi-image, rule references, reports, human review, remediation tracking, evaluation).
+v0.2 complete (154 tests passing). Agent orchestration runs on LangGraph `create_react_agent`. See `docs/` for implementation plans and design documents.

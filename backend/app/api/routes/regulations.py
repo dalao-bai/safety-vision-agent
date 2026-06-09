@@ -54,7 +54,7 @@ async def upload_regulation(
     conn: sqlite3.Connection = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
     store: RegulationStore = Depends(get_regulation_store),
-    _user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """上传一份规范：校验 -> 存盘 -> 解析切分 -> 写向量库 -> 落元数据。"""
     original_name = file.filename or ""
@@ -90,6 +90,7 @@ async def upload_regulation(
         file_path=str(stored_path),
         file_type=file_type,
         chunk_count=0,
+        uploaded_by=user.id,
     )
     try:
         text = store.parse_file(str(stored_path), file_type)
@@ -120,11 +121,18 @@ def delete_regulation(
     file_id: str,
     conn: sqlite3.Connection = Depends(get_db),
     store: RegulationStore = Depends(get_regulation_store),
-    _user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
 ) -> dict:
-    """软删除元数据并清理向量库中该文件的全部 chunk。"""
-    found = repo.soft_delete_regulation_file(conn, file_id)
-    if not found:
+    """软删除元数据并清理向量库中该文件的全部 chunk。仅上传者可删除。"""
+    # Ownership check: only the uploader may delete their file.
+    row = conn.execute(
+        "SELECT uploaded_by FROM regulation_files WHERE id = ? AND deleted_at IS NULL",
+        (file_id,),
+    ).fetchone()
+    if row is None:
         raise HTTPException(status_code=404, detail=f"unknown file_id: {file_id}")
+    if row["uploaded_by"] != user.id:
+        raise HTTPException(status_code=403, detail="not your regulation file")
+    repo.soft_delete_regulation_file(conn, file_id)
     store.delete_regulation(file_id)
     return {"deleted": file_id}

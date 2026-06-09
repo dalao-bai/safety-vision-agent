@@ -6,6 +6,8 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS conversations (
     id          TEXT PRIMARY KEY,
+    user_id     TEXT REFERENCES users(id),
+    confirmed   INTEGER DEFAULT NULL,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -116,6 +118,7 @@ CREATE TABLE IF NOT EXISTS regulation_files (
     file_path     TEXT NOT NULL,           -- 服务端完整路径
     file_type     TEXT NOT NULL,           -- 'pdf' | 'docx'
     chunk_count   INTEGER NOT NULL DEFAULT 0,
+    uploaded_by   TEXT REFERENCES users(id), -- 上传者；NULL 表示历史数据迁移前的记录
     deleted_at    TEXT,                    -- NULL 表示未删除（软删除）
     created_at    TEXT NOT NULL
 );

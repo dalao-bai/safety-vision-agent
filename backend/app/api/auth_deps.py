@@ -48,10 +48,12 @@ def get_current_user(
         raise HTTPException(status_code=401, detail=f"invalid token: {exc}") from exc
 
     user_id = payload.get("sub")
-    if not user_id or repo.get_user_by_id(conn, user_id) is None:
+    user_row = repo.get_user_by_id(conn, user_id) if user_id else None
+    if not user_id or user_row is None:
         raise HTTPException(status_code=401, detail="token subject is not a known user")
 
-    return CurrentUser(id=user_id, username=payload.get("username", ""))
+    # Use DB username, not the JWT claim — avoids stale data after username changes.
+    return CurrentUser(id=user_id, username=user_row["username"])
 
 
 def get_annotation_conn(
