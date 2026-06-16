@@ -1,4 +1,5 @@
 # backend/tests/test_clause_retriever.py
+from app.core.config import get_settings
 from app.models.foe_schemas import FoeObject
 from app.services.clause_retriever import (
     ClauseRetriever,
@@ -111,3 +112,10 @@ def test_retrieve_no_match_returns_empty():
          "status": "safe", "visual_evidence": "x"}
     )
     assert r.retrieve(obj) == []
+
+
+def test_load_reads_real_assets():
+    """用仓库内真实资产构造检索器，验证默认路径正确、规则已加载。"""
+    r = ClauseRetriever.load(get_settings())
+    assert r.name2id.get("基坑临边防护") == "foundation_pit_edge_protection"
+    assert "JGJ 80-2016" in r.standards

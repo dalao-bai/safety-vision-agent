@@ -74,6 +74,17 @@ class Settings(BaseSettings):
     # v0.2 report generation output directory (.docx files keyed by uuid).
     report_dir: str = Field("runtime/reports", alias="REPORT_DIR")
 
+    # v0.3 四口五临边条款报告：资产路径（相对仓库根）。
+    foe_rule_blocks: str = Field(
+        "知识图谱主文件/four_openings_edges_rule_blocks.json", alias="FOE_RULE_BLOCKS"
+    )
+    foe_standards_dir: str = Field(
+        "知识图谱主文件/标准规范文件", alias="FOE_STANDARDS_DIR"
+    )
+    foe_clause_index: str = Field(
+        "知识图谱主文件/标准规范文件/四口五临边标准引用索引.md", alias="FOE_CLAUSE_INDEX"
+    )
+
 
 def load_settings(env_file: str | None = _DEFAULT_ENV_FILE) -> Settings:
     """Load settings, converting pydantic validation errors into a clear ConfigError.

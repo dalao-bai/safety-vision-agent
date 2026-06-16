@@ -13,6 +13,7 @@ from typing import Iterator
 
 from app.core.config import Settings, get_settings
 from app.db.sqlite import connect, init_db
+from app.services.clause_retriever import ClauseRetriever
 from app.services.regulation_store import RegulationStore
 from app.services.responses_client import ResponsesClient
 
@@ -61,3 +62,13 @@ def get_regulation_store() -> RegulationStore:
     file-descriptor exhaustion and lock contention under concurrency.
     """
     return _regulation_store()
+
+
+@lru_cache(maxsize=1)
+def _clause_retriever() -> ClauseRetriever:
+    return ClauseRetriever.load(get_settings())
+
+
+def get_clause_retriever() -> ClauseRetriever:
+    """应用级单例：解析 rule_blocks + 标准 markdown 一次，跨请求复用。"""
+    return _clause_retriever()
