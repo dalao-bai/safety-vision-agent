@@ -1,0 +1,321 @@
+{
+  "standard": "JGJ 59-2011 建筑施工安全检查标准",
+  "table": "表B.13 高处作业检查评分表",
+  "source_file": "标准规范文件/JGJ 59-2011 建筑施工安全检查标准.pdf",
+  "text_file": "标准规范文件/JGJ59-2011.txt",
+  "structured_file": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md",
+  "items": [
+    {
+      "seq": 1,
+      "check_item": "安全帽",
+      "deduction_standard": "施工现场人员未戴安全帽，每人扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全帽、全类别施工现场人员",
+      "judgement_use": "个人头部防护用品缺失"
+    },
+    {
+      "seq": 1,
+      "check_item": "安全帽",
+      "deduction_standard": "未按标准佩戴安全帽，每人扣2分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全帽",
+      "judgement_use": "安全帽佩戴不规范"
+    },
+    {
+      "seq": 1,
+      "check_item": "安全帽",
+      "deduction_standard": "安全帽质量不符合现行国家相关标准的要求，扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全帽",
+      "judgement_use": "安全帽质量不合格"
+    },
+    {
+      "seq": 2,
+      "check_item": "安全网",
+      "deduction_standard": "在建工程外脚手架架体外侧未采用密目式安全网封闭或网间连接不严，扣2～10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全网、脚手架与支撑架体",
+      "judgement_use": "外侧安全网封闭缺失或不严"
+    },
+    {
+      "seq": 2,
+      "check_item": "安全网",
+      "deduction_standard": "安全网质量不符合现行国家相关标准的要求，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全网",
+      "judgement_use": "安全网质量不合格"
+    },
+    {
+      "seq": 3,
+      "check_item": "安全带",
+      "deduction_standard": "高处作业人员未按规定系挂安全带，每人扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全带、作业人员行为",
+      "judgement_use": "安全带未按规定使用"
+    },
+    {
+      "seq": 3,
+      "check_item": "安全带",
+      "deduction_standard": "安全带系挂不符合要求，每人扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全带、安全绳、生命线、锚固点",
+      "judgement_use": "安全带系挂方式或挂点不符合要求"
+    },
+    {
+      "seq": 3,
+      "check_item": "安全带",
+      "deduction_standard": "安全带质量不符合现行国家相关标准的要求，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全带",
+      "judgement_use": "安全带质量不合格"
+    },
+    {
+      "seq": 4,
+      "check_item": "临边防护",
+      "deduction_standard": "工作面边沿无临边防护，扣10分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/阳台、屋面、楼层、基坑、跑道临边防护",
+      "judgement_use": "临边防护缺失"
+    },
+    {
+      "seq": 4,
+      "check_item": "临边防护",
+      "deduction_standard": "临边防护设施的构造、强度不符合规范要求，扣5分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/临边防护",
+      "judgement_use": "临边防护构造强度不合格"
+    },
+    {
+      "seq": 4,
+      "check_item": "临边防护",
+      "deduction_standard": "防护设施未形成定型化、工具式，扣3分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/临边防护",
+      "judgement_use": "临边防护形式不规范"
+    },
+    {
+      "seq": 5,
+      "check_item": "洞口防护",
+      "deduction_standard": "在建工程的孔、洞未采取防护措施，每处扣5分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/楼梯口、电梯井口、预留洞口",
+      "judgement_use": "洞口防护缺失"
+    },
+    {
+      "seq": 5,
+      "check_item": "洞口防护",
+      "deduction_standard": "防护措施、设施不符合要求或不严密，每处扣3分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/洞口防护",
+      "judgement_use": "洞口防护不合格"
+    },
+    {
+      "seq": 5,
+      "check_item": "洞口防护",
+      "deduction_standard": "防护设施未形成用定型化、工具式，扣3分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/洞口防护",
+      "judgement_use": "洞口防护形式不规范"
+    },
+    {
+      "seq": 5,
+      "check_item": "洞口防护",
+      "deduction_standard": "电梯井内未按每隔两层且不大于10m设置安全平网，扣5分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/电梯井口防护",
+      "judgement_use": "电梯井水平防护不合格"
+    },
+    {
+      "seq": 6,
+      "check_item": "通道口防护",
+      "deduction_standard": "未搭设防护棚或防护不严、不牢固，扣5～10分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/通道口防护、施工通道与临时通行设施",
+      "judgement_use": "通道口防护棚缺失或失效"
+    },
+    {
+      "seq": 6,
+      "check_item": "通道口防护",
+      "deduction_standard": "防护棚两侧未进行封闭，扣4分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/通道口防护",
+      "judgement_use": "防护棚侧向封闭不合格"
+    },
+    {
+      "seq": 6,
+      "check_item": "通道口防护",
+      "deduction_standard": "防护棚宽度小于通道口宽度，扣4分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/通道口防护",
+      "judgement_use": "防护棚覆盖宽度不足"
+    },
+    {
+      "seq": 6,
+      "check_item": "通道口防护",
+      "deduction_standard": "防护棚长度不符合要求，扣4分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/通道口防护",
+      "judgement_use": "防护棚长度不足"
+    },
+    {
+      "seq": 6,
+      "check_item": "通道口防护",
+      "deduction_standard": "建筑物高度超过24m，防护棚顶未采用双层防护，扣4分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/通道口防护",
+      "judgement_use": "高层通道口防护层数不足"
+    },
+    {
+      "seq": 6,
+      "check_item": "通道口防护",
+      "deduction_standard": "防护棚的材质不符合规范要求，扣5分",
+      "score": 10,
+      "knowledge_objects": "四口五临边/通道口防护",
+      "judgement_use": "防护棚材质不合格"
+    },
+    {
+      "seq": 7,
+      "check_item": "攀登作业",
+      "deduction_standard": "移动式梯子的梯脚底部垫高使用，扣3分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/移动梯、爬梯",
+      "judgement_use": "梯脚使用条件不符合要求"
+    },
+    {
+      "seq": 7,
+      "check_item": "攀登作业",
+      "deduction_standard": "折梯未使用可靠拉撑装置，扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/折梯",
+      "judgement_use": "折梯拉撑装置缺失或不可靠"
+    },
+    {
+      "seq": 7,
+      "check_item": "攀登作业",
+      "deduction_standard": "梯子的材质或制作质量不符合规范要求，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/移动梯、爬梯",
+      "judgement_use": "梯具材质或制作质量不合格"
+    },
+    {
+      "seq": 8,
+      "check_item": "悬空作业",
+      "deduction_standard": "悬空作业处未设置防护栏杆或其他可靠的安全设施，扣5～10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/悬空作业防护",
+      "judgement_use": "悬空作业安全设施缺失"
+    },
+    {
+      "seq": 8,
+      "check_item": "悬空作业",
+      "deduction_standard": "悬空作业所用的索具、吊具等未经验收，扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/悬空作业索具吊具",
+      "judgement_use": "悬空作业工器具未验收"
+    },
+    {
+      "seq": 8,
+      "check_item": "悬空作业",
+      "deduction_standard": "悬空作业人员未系挂安全带或佩带工具袋，扣2～10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/安全带、工具袋、作业人员行为",
+      "judgement_use": "悬空作业个人防护不到位"
+    },
+    {
+      "seq": 9,
+      "check_item": "移动式操作平台",
+      "deduction_standard": "操作平台未按规定进行设计计算，扣8分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/移动式操作平台",
+      "judgement_use": "平台未设计计算"
+    },
+    {
+      "seq": 9,
+      "check_item": "移动式操作平台",
+      "deduction_standard": "移动式操作平台，轮子与平台的连接不牢固可靠或立柱底端距离地面超过80mm，扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/移动式操作平台",
+      "judgement_use": "平台轮连接或立柱底端高度不合格"
+    },
+    {
+      "seq": 9,
+      "check_item": "移动式操作平台",
+      "deduction_standard": "操作平台的组装不符合设计和规范要求，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/移动式操作平台",
+      "judgement_use": "平台组装不符合要求"
+    },
+    {
+      "seq": 9,
+      "check_item": "移动式操作平台",
+      "deduction_standard": "平台台面铺板不严，扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/移动式操作平台",
+      "judgement_use": "平台铺板不严"
+    },
+    {
+      "seq": 9,
+      "check_item": "移动式操作平台",
+      "deduction_standard": "操作平台四周未按规定设置防护栏杆或未设置登高扶梯，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/移动式操作平台",
+      "judgement_use": "平台栏杆或登高扶梯缺失"
+    },
+    {
+      "seq": 9,
+      "check_item": "移动式操作平台",
+      "deduction_standard": "操作平台的材质不符合规范要求，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/移动式操作平台",
+      "judgement_use": "平台材质不合格"
+    },
+    {
+      "seq": 10,
+      "check_item": "悬挑式物料钢平台",
+      "deduction_standard": "未编制专项施工方案或未经设计计算，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/悬挑式物料钢平台、安全专项方案",
+      "judgement_use": "悬挑平台方案或计算缺失"
+    },
+    {
+      "seq": 10,
+      "check_item": "悬挑式物料钢平台",
+      "deduction_standard": "悬挑式钢平台的下部支撑系统或上部拉结点，未设置在建筑结构上，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/悬挑式物料钢平台",
+      "judgement_use": "平台支撑或拉结点设置位置不合格"
+    },
+    {
+      "seq": 10,
+      "check_item": "悬挑式物料钢平台",
+      "deduction_standard": "斜拉杆或钢丝绳未按要求在平台两侧各设置两道，扣10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/悬挑式物料钢平台",
+      "judgement_use": "斜拉杆或钢丝绳设置不合格"
+    },
+    {
+      "seq": 10,
+      "check_item": "悬挑式物料钢平台",
+      "deduction_standard": "钢平台未按要求设置固定的防护栏杆或挡脚板，扣3～10分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/悬挑式物料钢平台",
+      "judgement_use": "平台栏杆或挡脚板缺失"
+    },
+    {
+      "seq": 10,
+      "check_item": "悬挑式物料钢平台",
+      "deduction_standard": "钢平台台面铺板不严或钢平台与建筑结构之间铺板不严，扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/悬挑式物料钢平台",
+      "judgement_use": "平台铺板不严"
+    },
+    {
+      "seq": 10,
+      "check_item": "悬挑式物料钢平台",
+      "deduction_standard": "未在平台明显处设置荷载限定标牌，扣5分",
+      "score": 10,
+      "knowledge_objects": "高处作业防护/悬挑式物料钢平台",
+      "judgement_use": "荷载限定标牌缺失"
+    }
+  ]
+}

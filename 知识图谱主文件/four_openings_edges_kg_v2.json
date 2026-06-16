@@ -1,0 +1,1873 @@
+{
+  "kg_name": "四口五临边视觉隐患识别知识图谱",
+  "version": "v2",
+  "scene": {
+    "id": "four_openings_edges",
+    "name": "四口五临边",
+    "scope": "楼梯口、电梯井口、预留洞口、通道口，以及阳台、屋面、楼层、基坑、跑道/斜道临边防护。",
+    "task_boundary": "仅保留图片中可见、可直接判定的四口五临边隐患规则；需要实测、承载力证明、资料台账或精确尺寸判断的规则已从第一阶段移除。"
+  },
+  "sources": [
+    {
+      "title": "直接评分依据",
+      "lines": [
+        "JGJ 59-2011《建筑施工安全检查标准》",
+        "标准规范文件/JGJ 59-2011 建筑施工安全检查标准.pdf",
+        "MinerU Markdown：标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md",
+        "引用：第3.13节、第3.13.3条第4/5/6项、表B.13。"
+      ]
+    },
+    {
+      "title": "专项/辅助依据",
+      "lines": [
+        "JGJ 80-2016《建筑施工高处作业安全技术规范》",
+        "标准规范文件/JGJ 80-2016 建筑施工高处作业安全技术规范.pdf",
+        "MinerU Markdown：标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md",
+        "引用：第4章、第4.1节、第4.2节、第4.3节、第8章。"
+      ]
+    },
+    {
+      "title": "结构化表格",
+      "lines": [
+        "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md",
+        "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.json",
+        "用途：临边防护、洞口防护、通道口防护隐患判定。"
+      ]
+    },
+    {
+      "title": "引用索引与对象映射",
+      "lines": [
+        "标准规范文件/四口五临边标准引用索引.md",
+        "集中记录标准条文、结构化表格和检查对象之间的对应关系。"
+      ]
+    },
+    {
+      "title": "参数化判定补充",
+      "lines": [
+        "已补充距离、长度、高度、间距、力矩、电阻、电流、时间等可核验参数；详见 标准参数化判定补充表.md。",
+        "新版标准正式全文未归档的项目，保留“待条文级核验”标识；已生成 MinerU Markdown 的标准可进入条文级复核。"
+      ]
+    }
+  ],
+  "status_labels": [
+    {
+      "id": "confirmed_hazard",
+      "name": "明确隐患",
+      "definition": "图片证据充分，能明确判断存在隐患。"
+    },
+    {
+      "id": "safe",
+      "name": "未见明显隐患",
+      "definition": "图片中相关对象防护完整，未见明显违规状态。"
+    },
+    {
+      "id": "uncertain",
+      "name": "证据不足",
+      "definition": "关键部位被遮挡、角度不足或对象边界不可见，不能直接判定为隐患或安全。"
+    }
+  ],
+  "hazard_types": {
+    "missing_protection": {
+      "name": "防护缺失",
+      "definition": "边缘、洞口、井口或通道口未设置必要防护设施。",
+      "visual_judgable": true,
+      "need_measurement": false,
+      "need_document": false
+    },
+    "discontinuous_protection": {
+      "name": "防护不连续/不严密",
+      "definition": "栏杆、防护门、防护网或围护存在中断、缺口、端部开口等问题。",
+      "visual_judgable": true,
+      "need_measurement": false,
+      "need_document": false
+    },
+    "temporary_substitute": {
+      "name": "临时替代防护",
+      "definition": "使用警戒带、木方、零散模板、材料堆放等替代正式防护。",
+      "visual_judgable": true,
+      "need_measurement": false,
+      "need_document": false
+    },
+    "unfixed_or_weak_protection": {
+      "name": "固定不牢/强度不足",
+      "definition": "防护设施明显松动、倾斜、破损、变形、靠放或连接异常。",
+      "visual_judgable": true,
+      "need_measurement": false,
+      "need_document": false
+    },
+    "door_open_or_missing": {
+      "name": "防护门缺失/未关闭",
+      "definition": "电梯井口等位置防护门缺失、打开、门锁损坏或底部空隙明显。",
+      "visual_judgable": true,
+      "need_measurement": false,
+      "need_document": false
+    },
+    "access_or_obstruction_issue": {
+      "name": "通行/障碍异常",
+      "definition": "人员未通过专用通道上下，或井道、通道、防护棚、上下通行路径等关键安全部位存在杂物堆放、阻挡、占用，导致通行、防护、坠落或坠物风险增加。",
+      "visual_judgable": true,
+      "need_measurement": false,
+      "need_document": false
+    }
+  },
+  "objects": [
+    {
+      "id": "stair_opening_protection",
+      "name": "楼梯口防护",
+      "group": "四口防护",
+      "definition": "在建工程楼梯口、楼梯平台、梯段边等存在人员从楼梯洞口或临空侧坠落风险的部位。",
+      "inspection_scope": [
+        "楼梯口周边",
+        "楼梯平台边沿",
+        "梯段临空侧",
+        "外设楼梯口及平台封闭",
+        "防护栏杆固定和连续状态"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.13.3条第5项；JGJ59-2011_表B.13_高处作业检查评分表.md 中“洞口防护”；条文说明3.13.3第5项；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [
+        {
+          "id": "stair_opening_protection_Q1",
+          "condition": "施工楼梯口、楼梯平台和梯段边安装防护栏杆；外设楼梯口、楼梯平台和梯段边采用密目式安全立网封闭。",
+          "evidence": [
+            "现场照片"
+          ],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.2条",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "stair_opening_protection_Q2",
+          "condition": "防护栏杆连续、严密、牢固，宜采用定型化、工具式防护，未见缺口、松动、移位或拆除后未恢复。",
+          "evidence": [
+            "现场照片"
+          ],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md；标准规范文件/四口五临边标准引用索引.md 条文说明3.13.3第5项",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        }
+      ],
+      "hazard_conditions": [
+        {
+          "id": "stair_opening_protection_H1",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "楼梯口、楼梯平台或梯段临空侧未设置防护栏杆，人员可直接接近坠落边缘。",
+          "visual_cues": [
+            "楼梯平台边沿敞开",
+            "梯段外侧无栏杆",
+            "人员通行处无防护"
+          ],
+          "text_cues": [
+            "楼梯口无防护",
+            "梯段边未设栏杆",
+            "平台临边敞开"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.2条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "stair_opening_protection_H2",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "外设楼梯口、楼梯平台或梯段边未采用密目式安全立网封闭，存在侧向坠落或物体坠落空隙。",
+          "visual_cues": [
+            "外设楼梯侧面无网",
+            "栏杆外侧未封闭",
+            "平台侧向空档"
+          ],
+          "text_cues": [
+            "外设楼梯未封闭",
+            "未挂密目网"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.2条、第4.3.5条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "stair_opening_protection_H5",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "因运输、装修、模板或材料吊运临时拆除楼梯口防护后，作业结束、无人看护或人员通行时未恢复。",
+          "visual_cues": [
+            "防护构件放在旁边",
+            "局部裸露",
+            "拆除痕迹明显"
+          ],
+          "text_cues": [
+            "拆除未恢复",
+            "临时拆防护",
+            "运输后未恢复"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/四口五临边标准引用索引.md",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "由 JGJ59 洞口防护“孔、洞应采取防护措施”和防护连续性要求派生；运输、装修、吊运等为现场视觉场景例子，不是标准原文列举。"
+        },
+        {
+          "id": "stair_opening_protection_H6",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "楼梯口、楼梯平台或梯段上随意堆放材料、模板、工具或余料废料，妨碍通行、易绊倒踩空，或物料可能从梯段坠落。",
+          "visual_cues": [
+            "楼梯口堆料",
+            "平台堆放杂物",
+            "梯段上放材料",
+            "余料挡道"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第3.0.6条",
+          "rectification": "及时清理堆放的材料、设备和余料废料，恢复通行与边沿防护；可能坠落的物料应固定或清运。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ80 第3.0.6条（可能坠落的物料应及时拆除或固定；物料堆放不得妨碍通行；余料废料不得随意放置或向下丢弃）派生。该条为高处作业通用要求，适用于楼梯口通行部位，判定为关键部位堆物/占用，归入通行/障碍异常。纯视觉判定。"
+        },
+        {
+          "id": "stair_opening_protection_H7",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "未见正式楼梯口防护栏杆或封闭，仅以警戒带、零散木方、钢筋、模板或材料堆放形成临时阻挡，或临时拆除后未及时恢复。",
+          "visual_cues": [
+            "楼梯口拉警戒带",
+            "木方或模板挡楼梯口",
+            "无正式栏杆仅临时遮挡"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.13.3条第5项及条文说明",
+          "rectification": "撤除警戒带、散料等临时替代物，设置正式、定型化、工具式防护设施。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ59 3.13.3第5项条文说明（洞口防护应定型化、严密，不得随意找材料替代，楼梯口应设防护栏杆）派生。用警戒带/散料临时凑数属非正式替代防护，视觉可判。"
+        }
+      ],
+      "safe_conditions": [
+        {
+          "id": "stair_opening_protection_N1",
+          "condition": "楼梯口和梯段边已设置连续牢固栏杆并封闭，未见缺口、松动、拆改。",
+          "decision": "不判隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "由 stair_opening_protection_Q1、stair_opening_protection_Q2 派生；依据 JGJ80 第4.1.2条及 JGJ59 第3.13.3条第5项、条文说明3.13.3第5项；用于安全态判定，不是独立扣分条文。",
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "安全态规则，由合格条件反向确认“未见明显隐患”。"
+        },
+        {
+          "id": "stair_opening_protection_N2",
+          "condition": "已完工永久楼梯安装永久栏杆，现场不存在施工开口或临时拆改风险。",
+          "decision": "不判为施工楼梯口防护隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "任务边界排除规则；依据 core/four_openings_edges_kg_v2.json 的 task_boundary 和对象定义，不是规范扣分条文。",
+          "source_type": "task_boundary",
+          "strict_standard_mapping": false,
+          "derivation_note": "已完工永久楼梯不按施工楼梯口临时防护隐患判定；属于对象边界/排除项。"
+        }
+      ],
+      "uncertain_conditions": [
+        {
+          "id": "stair_opening_protection_A1",
+          "condition": "图片只能看到楼梯踏步，无法看到楼梯口边缘或梯段临空侧。",
+          "decision": "需补充角度，不直接判隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "对象关键边缘不可见时输出 uncertain，不硬判隐患。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    },
+    {
+      "id": "elevator_shaft_protection",
+      "name": "电梯井口防护",
+      "group": "四口防护",
+      "definition": "在建工程电梯井口、井道临边和井道内部水平防护部位。",
+      "inspection_scope": [
+        "电梯井口防护门/栏杆",
+        "防护底部缝隙和挡脚板",
+        "井内安全平网或水平防护",
+        "井道杂物",
+        "防护门闭锁和维护状态"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.13.3条第5项；JGJ59-2011_表B.13_高处作业检查评分表.md 中“洞口防护”；条文说明3.13.3第5项；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [
+        {
+          "id": "elevator_shaft_protection_Q3",
+          "condition": "井口防护门或栏杆保持关闭、固定、锁闭或可靠限位，井内无杂物。",
+          "evidence": [
+            "现场照片"
+          ],
+          "source": "标准规范文件/四口五临边标准引用索引.md 条文说明3.13.3第5项；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.2条、第4.2.3条",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "井内无杂物、井口应设防护有直接依据；“关闭、锁闭或可靠限位”是可靠防护的视觉化派生表达。"
+        }
+      ],
+      "hazard_conditions": [
+        {
+          "id": "elevator_shaft_protection_H1",
+          "hazard_type_id": "door_open_or_missing",
+          "hazard_type": "防护门缺失/未关闭",
+          "condition": "电梯井口未设置防护门、栏杆或可靠封闭，井口敞开。",
+          "visual_cues": [
+            "井口完全敞开",
+            "井口仅有警戒线",
+            "井口无门无栏杆"
+          ],
+          "text_cues": [
+            "电梯井口无防护",
+            "井口敞开"
+          ],
+          "severity_hint": "重大",
+          "default_grade": 1,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.2条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "elevator_shaft_protection_H2",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "电梯井口防护门或栏杆底部存在明显空隙、未见挡脚板，或下部开口可使人员、物料从井口坠落。",
+          "visual_cues": [
+            "防护门底部明显空隙",
+            "井口下部无挡脚板",
+            "栏杆下方开口明显"
+          ],
+          "text_cues": [
+            "电梯井口底部空隙",
+            "未设挡脚板",
+            "防护门下部开口"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.2条",
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "JGJ80 第4.2.2包含防护底端距地面高度和挡脚板要求；本规则只用于明显空隙的视觉判定，不作精确尺寸判断。 隐患类型调整说明：底部明显空隙/未见挡脚板本质是井口防护不严密，不是防护门缺失或未关闭。",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false
+        },
+        {
+          "id": "elevator_shaft_protection_H3",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "电梯井道内未见安全平网或其他水平防护，井道内部形成连续坠落空间。",
+          "visual_cues": [
+            "井道内无水平防护",
+            "井道深处裸露",
+            "未见安全平网"
+          ],
+          "text_cues": [
+            "电梯井内无平网",
+            "井道无水平防护",
+            "未设置安全平网"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.13.3条第5项；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.3条",
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "标准包含每隔2层且不大于10m设置安全平网的要求；本规则只在图片可直接看出井道内无任何水平防护时触发，不判断间距。",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false
+        },
+        {
+          "id": "elevator_shaft_protection_H4",
+          "hazard_type_id": "door_open_or_missing",
+          "hazard_type": "防护门缺失/未关闭",
+          "condition": "井口防护门打开未关闭、门锁失效、门体松动或可被随意开启。",
+          "visual_cues": [
+            "防护门敞开",
+            "门锁损坏",
+            "门体松动"
+          ],
+          "text_cues": [
+            "防护门未关闭",
+            "闭锁失效",
+            "门体松动"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/四口五临边标准引用索引.md 条文说明3.13.3第5项；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.2条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "防护门打开、松动可归入防护不严密/不牢固；门锁失效、随意开启为可靠防护的视觉化派生。"
+        },
+        {
+          "id": "elevator_shaft_protection_H5",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "电梯井内堆放模板、木方、垃圾等杂物，影响井内水平防护或形成坠物、坠落风险。",
+          "visual_cues": [
+            "井内堆料",
+            "井道内垃圾",
+            "杂物堆在井道内"
+          ],
+          "text_cues": [
+            "电梯井内堆料",
+            "井内有杂物",
+            "井道内垃圾"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/四口五临边标准引用索引.md 条文说明3.13.3第5项；标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 条文说明3.13.3第5项",
+          "rectification": "清理井内杂物，恢复井口及井道水平防护。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true,
+          "derivation_note": "隐患类型调整说明：井道内杂物属于关键安全部位堆放/占用，影响水平防护并增加坠物或坠落风险。"
+        },
+        {
+          "id": "elevator_shaft_protection_H6",
+          "hazard_type_id": "unfixed_or_weak_protection",
+          "hazard_type": "固定不牢/强度不足",
+          "condition": "电梯井内安全平网破损、松脱、拉结异常，或平网与井壁之间存在明显空隙。",
+          "visual_cues": [
+            "平网破损",
+            "平网边缘脱开",
+            "平网与井壁空隙明显"
+          ],
+          "text_cues": [
+            "电梯井平网破损",
+            "平网松脱",
+            "平网与井壁空隙"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.3条、第8.2.4条",
+          "source_type": "standard",
+          "strict_standard_mapping": true,
+          "rectification": "更换或重新拉结安全平网，保证平网与井壁贴合并固定可靠。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false
+        },
+        {
+          "id": "elevator_shaft_protection_H7",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "未见正式电梯井口防护门或栏杆，仅以模板、木方、钢筋网片或材料临时遮挡井口，易被移动或踩空坠落。",
+          "visual_cues": [
+            "模板临时挡井口",
+            "井口仅木方遮挡",
+            "无正式防护门仅堆挡"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.13.3条第5项及条文说明",
+          "rectification": "撤除警戒带、散料等临时替代物，设置正式、定型化、工具式防护设施。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ59 3.13.3第5项条文说明（电梯井口应设防护栏杆/可靠封闭，不得随意找材料替代）派生。用临时材料凑数遮挡井口属非正式替代防护，视觉可判。现实较少见，列为可选。"
+        }
+      ],
+      "safe_conditions": [],
+      "uncertain_conditions": [
+        {
+          "id": "elevator_shaft_protection_A1",
+          "condition": "图片只显示疑似电梯井口局部，防护门、井口内部、门锁或闭合状态被遮挡，无法确认是否关闭或可靠防护。",
+          "decision": "输出需复核，不直接判定隐患或安全",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "井口、防护门或井内状态被遮挡时输出 uncertain。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    },
+    {
+      "id": "reserved_opening_protection",
+      "name": "预留洞口防护",
+      "group": "四口防护",
+      "definition": "楼面、地面、屋面、墙面等可能使人或物料坠落的预留洞口、管井洞、采光井洞、设备洞口。",
+      "inspection_scope": [
+        "洞口尺寸和方向",
+        "盖板/封堵/栏杆/平网",
+        "盖板固定和承载",
+        "洞口标识",
+        "临时拆改恢复状态"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.13.3条第5项；JGJ59-2011_表B.13_高处作业检查评分表.md 中“洞口防护”；条文说明3.13.3第5项；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [
+        {
+          "id": "reserved_opening_protection_Q3",
+          "condition": "洞口防护严密、定型化、工具式，未随意使用模板、木方等易移位材料代替可靠防护。",
+          "evidence": [
+            "现场照片"
+          ],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/四口五临边标准引用索引.md 条文说明3.13.3第5项",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        }
+      ],
+      "hazard_conditions": [
+        {
+          "id": "reserved_opening_protection_H1",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "预留洞口未采取任何盖板、封堵、围护、栏杆或安全平网措施。",
+          "visual_cues": [
+            "洞口直接裸露",
+            "楼板开洞无遮挡",
+            "人员可踏入洞口"
+          ],
+          "text_cues": [
+            "洞口敞开",
+            "未防护",
+            "孔洞无盖板"
+          ],
+          "severity_hint": "重大",
+          "default_grade": 1,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.1条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "reserved_opening_protection_H2",
+          "hazard_type_id": "unfixed_or_weak_protection",
+          "hazard_type": "固定不牢/强度不足",
+          "condition": "洞口虽有盖板但未固定、翘起、移位、覆盖不严或四周搁置不均衡，踩踏可能坠落。",
+          "visual_cues": [
+            "盖板翘起",
+            "盖板可移动",
+            "洞口边缘露缝"
+          ],
+          "text_cues": [
+            "盖板未固定",
+            "覆盖不严",
+            "盖板移位"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.1条、第4.2.4条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "reserved_opening_protection_H5",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "随意用模板、木方、钢筋网片、废料堆放等材料覆盖洞口，易被移动或误踩。",
+          "visual_cues": [
+            "零散模板盖洞",
+            "木方搭盖",
+            "材料堆遮挡洞口"
+          ],
+          "text_cues": [
+            "临时覆盖",
+            "非定型化",
+            "材料遮挡洞口"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/四口五临边标准引用索引.md 条文说明3.13.3第5项",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "JGJ59 条文说明明确不得随意找材料盖预留洞口；模板、木方、钢筋网片、废料堆放为视觉例子。"
+        },
+        {
+          "id": "reserved_opening_protection_H6",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "预留洞口采用栏杆、围护或安全平网防护，但存在端部未封闭、网片破损未封严或局部缺口，不能形成连续严密的防坠落屏障。",
+          "visual_cues": [
+            "洞口围护有缺口",
+            "洞口网片破损",
+            "栏杆端部未封"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.13.3条第5项及条文说明",
+          "rectification": "封闭围护、网片的缺口与端部，使防护连续、严密、无空隙。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ59 3.13.3第5项（洞口防护应严密）派生。仅针对洞口用栏杆/围护/网防护时的不严密/有缺口情形；盖板类覆盖不严已在本对象 H2（不牢）中，不重复。价值有限，列为可选。"
+        }
+      ],
+      "safe_conditions": [
+        {
+          "id": "reserved_opening_protection_N1",
+          "condition": "洞口使用固定盖板、工具式防护栏杆或安全平网严密防护，并有明显标识。",
+          "decision": "不判隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "由 reserved_opening_protection_Q3 派生；依据 JGJ59 第3.13.3条第5项、条文说明3.13.3第5项，JGJ80 第3.0.4条、第4.2.1条；用于安全态判定，不是独立扣分条文。",
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "固定盖板、工具式栏杆或安全平网严密防护有直接依据；明显标识按高处作业安全警示标志要求作一般支撑。"
+        }
+      ],
+      "uncertain_conditions": [
+        {
+          "id": "reserved_opening_protection_A1",
+          "condition": "洞口被材料遮挡，无法确认是否有固定盖板或可靠支承。",
+          "decision": "判为需复核，不直接判定盖板缺失",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "洞口及盖板支承被遮挡时输出 uncertain。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    },
+    {
+      "id": "passage_entrance_protection",
+      "name": "通道口防护",
+      "group": "四口防护",
+      "definition": "施工现场人员进出建筑物、脚手架、楼层或交叉作业区域下方的通道口及其防砸棚。",
+      "inspection_scope": [
+        "通道口防护棚",
+        "棚顶层数和材料",
+        "两侧封闭",
+        "宽度和长度",
+        "棚体牢固性",
+        "坠落半径内通行状态"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.13.3条第6项；JGJ59-2011_表B.13_高处作业检查评分表.md 中“通道口防护”；条文说明3.13.3第6项；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [
+        {
+          "id": "passage_entrance_protection_Q1",
+          "condition": "施工现场人员进出的通道口应搭设安全防护棚；处于起重机臂架回转范围内的通道也应搭设安全防护棚。",
+          "evidence": [
+            "现场照片"
+          ],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第7.1.3条、第7.1.4条",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        }
+      ],
+      "hazard_conditions": [
+        {
+          "id": "passage_entrance_protection_H1",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "坠物半径内的主要通道口、建筑物出入口或起重机臂架回转范围内通道未搭设防护棚。",
+          "visual_cues": [
+            "通道口上方无遮挡",
+            "出入口无棚",
+            "人员从无棚通道进出"
+          ],
+          "text_cues": [
+            "未搭设防护棚",
+            "通道口无防护"
+          ],
+          "severity_hint": "重大",
+          "default_grade": 1,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 通道口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第7.1.1条、第7.1.2条、第7.1.3条、第7.1.4条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "passage_entrance_protection_H2",
+          "hazard_type_id": "unfixed_or_weak_protection",
+          "hazard_type": "固定不牢/强度不足",
+          "condition": "防护棚顶板破损、铺设不严、杆件松动、变形或局部坍塌，不能形成有效防砸保护。",
+          "visual_cues": [
+            "棚顶破洞",
+            "顶板松散",
+            "棚架倾斜"
+          ],
+          "text_cues": [
+            "防护棚不严",
+            "防护棚不牢",
+            "棚顶破损"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 通道口防护",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "passage_entrance_protection_H3",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "防护棚两侧未采用密目式安全网或等效措施封闭，坠物可从侧面进入通道。",
+          "visual_cues": [
+            "棚两侧敞开",
+            "侧面无网",
+            "侧向空档"
+          ],
+          "text_cues": [
+            "两侧未封闭",
+            "侧面无密目网"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 通道口防护；标准规范文件/四口五临边标准引用索引.md 条文说明3.13.3第6项",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "passage_entrance_protection_H6",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "安全防护棚棚顶堆放材料、垃圾或设备，增加坠物和棚体失稳风险。",
+          "visual_cues": [
+            "棚顶堆料",
+            "棚顶放模板",
+            "棚顶杂物"
+          ],
+          "text_cues": [
+            "棚顶堆物",
+            "防护棚上堆料"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第7.1.5条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true,
+          "derivation_note": "隐患类型调整说明：防护棚棚顶堆物属于关键防护部位占用/堆载，视觉上与通行障碍和防护失效风险相关。"
+        },
+        {
+          "id": "passage_entrance_protection_H7",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "未搭设正式安全防护棚，仅以彩条布、零散杆件或材料临时遮挡通道口，不能形成可靠的防砸防护。",
+          "visual_cues": [
+            "通道口彩条布遮挡",
+            "零散材料临时搭挡",
+            "无正式防护棚"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.13.3条第6项及条文说明",
+          "rectification": "撤除警戒带、散料等临时替代物，设置正式、定型化、工具式防护设施。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ59 3.13.3第6项（通道口应搭设严密牢固的安全防护棚）派生。用彩条布/零散材料临时凑数属非正式替代防护，视觉可判。现实较少见，列为可选。"
+        }
+      ],
+      "safe_conditions": [],
+      "uncertain_conditions": [
+        {
+          "id": "passage_entrance_protection_A1",
+          "condition": "图片只显示棚体局部，无法判断是否为通道口或是否覆盖完整通行路线。",
+          "decision": "需结合全景或平面位置复核",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "棚体局部或通道口属性不可确认时输出 uncertain。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    },
+    {
+      "id": "balcony_edge_protection",
+      "name": "阳台临边防护",
+      "group": "五临边防护",
+      "definition": "在建工程阳台外侧、阳台门洞外侧、阳台板边等无永久围护或围护高度不足800mm的临空作业边沿。",
+      "inspection_scope": [
+        "阳台外侧边沿",
+        "阳台门洞临空处",
+        "阳台栏板未完成部位",
+        "材料堆放和人员通行情况"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.13.3条第4项；JGJ59-2011_表B.13_高处作业检查评分表.md 中“临边防护”；条文说明3.13.3第4项；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [],
+      "hazard_conditions": [
+        {
+          "id": "balcony_edge_protection_H1",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "作业面临空边沿未设置防护栏杆、工具式栏板、密目式安全立网或其他可靠封闭措施，人员可直接接近坠落边缘。",
+          "visual_cues": [
+            "临边完全敞开",
+            "边缘无栏杆",
+            "人员或材料靠近未防护边缘"
+          ],
+          "text_cues": [
+            "无临边防护",
+            "临边敞开",
+            "未设栏杆"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第4.3.4条；标准规范文件/四口五临边标准引用索引.md",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "balcony_edge_protection_H2",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "防护设施存在端部未封闭、局部中断、底部明显空隙或网片未封闭，不能形成连续防坠落屏障。",
+          "visual_cues": [
+            "栏杆中断",
+            "端部开口",
+            "网片缺失",
+            "底部空档"
+          ],
+          "text_cues": [
+            "防护不连续",
+            "封闭不严",
+            "端部未收口"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第4.3.4条、第4.3.5条；标准规范文件/四口五临边标准引用索引.md",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "端部开口、局部中断、网片未封闭有条文支撑；“底部明显空隙”为挡脚板/封闭效果的视觉化表达。"
+        },
+        {
+          "id": "balcony_edge_protection_H5",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "未见正式阳台临边防护，仅以警戒带、零散木方、钢筋、模板或材料堆放形成临时阻挡，或临时拆除后未及时恢复。",
+          "visual_cues": [
+            "警戒带代替栏杆",
+            "木方临时拦挡",
+            "防护构件被拆放一旁"
+          ],
+          "text_cues": [
+            "警戒带代替",
+            "临时防护",
+            "拆除未恢复"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第4.3.4条；标准规范文件/四口五临边标准引用索引.md",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "仅在未见正式防护且临时物形成替代阻挡时触发，避免把正常材料堆放误判为防护替代。"
+        },
+        {
+          "id": "balcony_edge_protection_H6",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "阳台临边边沿或作业面随意堆放松散材料、模板、钢筋或余料废料，可能从临边坠落伤及下方，或妨碍通行致人坠落。",
+          "visual_cues": [
+            "阳台边堆料",
+            "临边堆放材料",
+            "边沿放余料"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第3.0.6条",
+          "rectification": "及时清理堆放的材料、设备和余料废料，恢复通行与边沿防护；可能坠落的物料应固定或清运。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ80 第3.0.6条派生（物料堆放不得妨碍通行、可能坠落物料应及时清理固定）。通用高处作业要求适用于阳台临边部位，判定为关键部位堆物/占用，归入通行/障碍异常。纯视觉判定。"
+        }
+      ],
+      "safe_conditions": [],
+      "uncertain_conditions": [
+        {
+          "id": "balcony_edge_protection_A1",
+          "condition": "图片角度只能看到作业面，无法确认临空侧是否存在或防护是否连续。",
+          "decision": "输出需复核，不直接判定隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "临空侧或防护连续性不可见时输出 uncertain。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    },
+    {
+      "id": "roof_edge_protection",
+      "name": "屋面临边防护",
+      "group": "五临边防护",
+      "definition": "在建工程屋面周边、屋面洞口、采光井、天窗洞口、坡屋面檐口等存在人员坠落风险的屋面边沿或开口。",
+      "inspection_scope": [
+        "屋面周边临边",
+        "屋面洞口/采光井/天窗",
+        "坡屋面檐口",
+        "屋面材料堆放位置",
+        "外脚手架或防护栏杆连续状态"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.13.3条第4项、第5项；JGJ59-2011_表B.13_高处作业检查评分表.md；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [
+        {
+          "id": "roof_edge_protection_Q1",
+          "condition": "屋面周边临边防护连续、牢固、封闭；屋面洞口按洞口防护要求采用盖板、栏杆或安全平网严密防护；坡度较大屋面按专项要求增设防护栏杆和密目网。",
+          "evidence": [
+            "现场照片"
+          ],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护、洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.2.1条、第5.2.8条",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        }
+      ],
+      "hazard_conditions": [
+        {
+          "id": "roof_edge_protection_H1",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "作业面临空边沿未设置防护栏杆、工具式栏板、密目式安全立网或其他可靠封闭措施，人员可直接接近坠落边缘。",
+          "visual_cues": [
+            "临边完全敞开",
+            "边缘无栏杆",
+            "人员或材料靠近未防护边缘"
+          ],
+          "text_cues": [
+            "无临边防护",
+            "临边敞开",
+            "未设栏杆"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护、洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.2.1条、第4.3.1条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "roof_edge_protection_H2",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "防护设施存在端部未封闭、局部中断、底部明显空隙或网片未封闭，不能形成连续防坠落屏障。",
+          "visual_cues": [
+            "栏杆中断",
+            "端部开口",
+            "网片缺失",
+            "底部空档"
+          ],
+          "text_cues": [
+            "防护不连续",
+            "封闭不严",
+            "端部未收口"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护、洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.2.1条、第4.3.1条、第4.3.5条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "防护中断和未封闭有直接依据；“底部明显空隙”为挡脚板/封闭效果的视觉化表达。"
+        },
+        {
+          "id": "roof_edge_protection_H5",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "未见正式屋面临边或屋面洞口防护，仅以警戒带、零散木方、钢筋、模板或材料堆放形成临时阻挡，或临时拆除后未及时恢复。",
+          "visual_cues": [
+            "警戒带代替栏杆",
+            "木方临时拦挡",
+            "防护构件被拆放一旁"
+          ],
+          "text_cues": [
+            "警戒带代替",
+            "临时防护",
+            "拆除未恢复"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护、洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.2.1条、第4.3.1条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "仅在未见正式防护且临时物形成替代阻挡时触发，避免把正常材料堆放误判为防护替代。"
+        },
+        {
+          "id": "roof_edge_protection_H6",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "屋面采光井、天窗、设备洞口未覆盖、未围护或防护不严密。",
+          "visual_cues": [
+            "屋面洞口裸露",
+            "采光井无围护",
+            "天窗洞口无盖板"
+          ],
+          "text_cues": [
+            "屋面洞口无防护",
+            "采光井防护缺失"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 洞口防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.2.1条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "roof_edge_protection_H7",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "屋面临边边沿或作业面随意堆放松散材料、工具或余料废料，可能从屋面边沿坠落伤及下方，或妨碍通行致人坠落。",
+          "visual_cues": [
+            "屋面边堆料",
+            "屋面边沿放材料",
+            "屋面余料未清"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第3.0.6条",
+          "rectification": "及时清理堆放的材料、设备和余料废料，恢复通行与边沿防护；可能坠落的物料应固定或清运。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ80 第3.0.6条派生。通用高处作业要求适用于屋面临边部位，判定为关键部位堆物/占用，归入通行/障碍异常。纯视觉判定。"
+        }
+      ],
+      "safe_conditions": [],
+      "uncertain_conditions": [
+        {
+          "id": "roof_edge_protection_A1",
+          "condition": "图片角度只能看到作业面，无法确认临空侧是否存在或防护是否连续。",
+          "decision": "输出需复核，不直接判定隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "屋面临空侧或防护连续性不可见时输出 uncertain。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    },
+    {
+      "id": "floor_edge_protection",
+      "name": "楼层临边防护",
+      "group": "五临边防护",
+      "definition": "在建工程楼层结构边、楼板边、楼层卸料边、尚未砌筑外围护的建筑物外围边沿。",
+      "inspection_scope": [
+        "楼层结构边",
+        "楼板边",
+        "建筑物外围边沿",
+        "楼层材料运输口附近临边",
+        "防护随楼层施工跟进情况"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.13.3条第4项；JGJ59-2011_表B.13_高处作业检查评分表.md 中“临边防护”；条文说明3.13.3第4项；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [
+        {
+          "id": "floor_edge_protection_Q1",
+          "condition": "楼层结构边和建筑物外围边沿设置连续、牢固、封闭的临边防护；无外脚手架时设防护栏杆，有外脚手架时密目式安全立网全封闭。",
+          "evidence": [
+            "现场照片"
+          ],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.3条、第4.3.1条",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        }
+      ],
+      "hazard_conditions": [
+        {
+          "id": "floor_edge_protection_H1",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "作业面临空边沿未设置防护栏杆、工具式栏板、密目式安全立网或其他可靠封闭措施，人员可直接接近坠落边缘。",
+          "visual_cues": [
+            "临边完全敞开",
+            "边缘无栏杆",
+            "人员或材料靠近未防护边缘"
+          ],
+          "text_cues": [
+            "无临边防护",
+            "临边敞开",
+            "未设栏杆"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第4.3.4条；标准规范文件/四口五临边标准引用索引.md",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true
+        },
+        {
+          "id": "floor_edge_protection_H2",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "防护设施存在端部未封闭、局部中断、底部明显空隙或网片未封闭，不能形成连续防坠落屏障。",
+          "visual_cues": [
+            "栏杆中断",
+            "端部开口",
+            "网片缺失",
+            "底部空档"
+          ],
+          "text_cues": [
+            "防护不连续",
+            "封闭不严",
+            "端部未收口"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第4.3.4条、第4.3.5条；标准规范文件/四口五临边标准引用索引.md",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "局部中断和网片未封闭有依据；“底部明显空隙”为挡脚板/封闭效果的视觉化表达。"
+        },
+        {
+          "id": "floor_edge_protection_H5",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "未见正式楼层临边防护，仅以警戒带、零散木方、钢筋、模板或材料堆放形成临时阻挡，或临时拆除后未及时恢复。",
+          "visual_cues": [
+            "警戒带代替栏杆",
+            "木方临时拦挡",
+            "防护构件被拆放一旁"
+          ],
+          "text_cues": [
+            "警戒带代替",
+            "临时防护",
+            "拆除未恢复"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第4.3.4条；标准规范文件/四口五临边标准引用索引.md",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "仅在未见正式防护且临时物形成替代阻挡时触发，避免把正常材料堆放误判为防护替代。"
+        },
+        {
+          "id": "floor_edge_protection_H6",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "楼层临边边沿或作业面随意堆放松散材料、模板、钢筋或余料废料，可能从临边坠落伤及下方，或妨碍通行致人坠落。",
+          "visual_cues": [
+            "楼层边堆料",
+            "临边堆放材料",
+            "边沿放模板余料"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第3.0.6条",
+          "rectification": "及时清理堆放的材料、设备和余料废料，恢复通行与边沿防护；可能坠落的物料应固定或清运。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ80 第3.0.6条派生。通用高处作业要求适用于楼层临边部位，判定为关键部位堆物/占用，归入通行/障碍异常。纯视觉判定。"
+        }
+      ],
+      "safe_conditions": [],
+      "uncertain_conditions": [
+        {
+          "id": "floor_edge_protection_A1",
+          "condition": "图片角度只能看到作业面，无法确认临空侧是否存在或防护是否连续。",
+          "decision": "输出需复核，不直接判定隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "楼层临空侧或防护连续性不可见时输出 uncertain。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    },
+    {
+      "id": "foundation_pit_edge_protection",
+      "name": "基坑临边防护",
+      "group": "五临边防护",
+      "definition": "开挖深度2m及以上的基坑、沟槽、坑边作业面周边及上下基坑通道邻近边沿。",
+      "inspection_scope": [
+        "基坑周边围护栏杆",
+        "坑边通行路线",
+        "上下基坑专用通道",
+        "坑边堆载和车辆通行",
+        "夜间警示和照明"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.11节“基坑工程”；第3.13.3条第4项；JGJ59-2011_表B.13_高处作业检查评分表.md 中“临边防护”；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [],
+      "hazard_conditions": [
+        {
+          "id": "foundation_pit_edge_protection_H1",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "开挖深度2m及以上或图像中可见明显坠落高差的基坑周边未设置防护栏杆、工具式栏板、密目式安全立网或其他可靠封闭措施，人员可直接接近坠落边缘。",
+          "visual_cues": [
+            "临边完全敞开",
+            "边缘无栏杆",
+            "人员或材料靠近未防护边缘"
+          ],
+          "text_cues": [
+            "无临边防护",
+            "临边敞开",
+            "未设栏杆"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.11.3条“安全防护”；标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "JGJ59 对基坑周边防护有2m及以上门槛；图片无法确认精确高差时，应结合明显坠落高差判断或输出 uncertain。"
+        },
+        {
+          "id": "foundation_pit_edge_protection_H2",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "开挖深度2m及以上或图像中可见明显坠落高差的基坑周边防护设施存在端部未封闭、局部中断、底部明显空隙或网片未封闭，不能形成连续防坠落屏障。",
+          "visual_cues": [
+            "栏杆中断",
+            "端部开口",
+            "网片缺失",
+            "底部空档"
+          ],
+          "text_cues": [
+            "防护不连续",
+            "封闭不严",
+            "端部未收口"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.11.3条“安全防护”；标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第4.3.4条、第4.3.5条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "基坑深度门槛来自 JGJ59；连续封闭和栏杆构造来自临边防护条款。"
+        },
+        {
+          "id": "foundation_pit_edge_protection_H5",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "开挖深度2m及以上或图像中可见明显坠落高差的基坑周边，用警戒带、零散木方、钢筋、模板、材料堆放等替代正式临边防护，或临时拆除后未及时恢复。",
+          "visual_cues": [
+            "警戒带代替栏杆",
+            "木方临时拦挡",
+            "防护构件被拆放一旁"
+          ],
+          "text_cues": [
+            "警戒带代替",
+            "临时防护",
+            "拆除未恢复"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.11.3条“安全防护”；标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "临时替代物为现场例子；标准依据是2m及以上基坑周边必须安装规范防护栏杆。"
+        },
+        {
+          "id": "foundation_pit_edge_protection_H6",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "人员从坑壁、支撑、机械设备或非专用路径上下基坑。",
+          "visual_cues": [
+            "人员沿坑壁上下",
+            "人员踩支撑上下",
+            "人员借机械设备上下"
+          ],
+          "text_cues": [
+            "沿坑壁上下",
+            "踩支撑上下",
+            "非专用路径上下基坑"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.11.3条“安全防护”；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第5.1.11条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "standard",
+          "strict_standard_mapping": true,
+          "derivation_note": "隐患类型调整说明：人员从非专用路径上下基坑属于通行路径异常。"
+        },
+        {
+          "id": "foundation_pit_edge_protection_H7",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "基坑内未见供施工人员上下的专用梯道、扶梯、踏步或斜道，或专用梯道未设置扶手栏杆、与坑边临边防护未连续衔接。",
+          "visual_cues": [
+            "无上下通道",
+            "梯道无扶手",
+            "梯道口无防护",
+            "通道与坑边防护断开"
+          ],
+          "text_cues": [
+            "基坑无专用梯道",
+            "梯道无扶手",
+            "通道与临边防护未衔接"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 第3.11.3条“安全防护”；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第5.1.11条",
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "专用梯道和扶手栏杆有直接依据；“与坑边临边防护未连续衔接”为防护连续性的视觉化派生。 隐患类型调整说明：基坑专用上下通道缺失、无扶手或未衔接属于通行设施异常。",
+          "rectification": "设置符合规范要求的专用上下通道、扶手栏杆，并与坑边临边防护连续衔接。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false
+        }
+      ],
+      "safe_conditions": [],
+      "uncertain_conditions": [
+        {
+          "id": "foundation_pit_edge_protection_A1",
+          "condition": "图片角度只能看到作业面，无法确认临空侧是否存在或防护是否连续。",
+          "decision": "输出需复核，不直接判定隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "基坑临空侧、高差或防护连续性不可见时输出 uncertain。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    },
+    {
+      "id": "ramp_edge_protection",
+      "name": "跑道（斜道）临边防护",
+      "group": "五临边防护",
+      "definition": "施工跑道、斜道、坡道、上下通行斜坡及其平台两侧存在人员坠落风险的通行边沿。",
+      "inspection_scope": [
+        "斜道两侧栏杆和挡脚板",
+        "斜道平台外围",
+        "踏面/坡面防滑措施",
+        "脚手板铺设和探头板",
+        "上下口与临边防护衔接"
+      ],
+      "source": "主要引用：JGJ 59-2011 第3.13.3条第4项、第7项；JGJ59-2011_表B.13_高处作业检查评分表.md；标准规范文件/四口五临边标准引用索引.md。引用表格和索引均已保存在本地标准规范目录，引用结构化表格时以文件名为准。",
+      "qualified_conditions": [
+        {
+          "id": "ramp_edge_protection_Q1",
+          "condition": "跑道、斜道两侧及平台外围设置连续栏杆和挡脚板，连接固定可靠；踏面稳定并设置防滑措施，通行上下口与临边防护连续衔接。",
+          "evidence": [
+            "现场照片"
+          ],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 表B.3扣件式钢管脚手架检查评分表“通道”“脚手板与防护栏杆”；标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护、攀登作业；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第5.1.11条",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "栏杆和挡脚板来自临边栏杆构造要求；防滑措施来自深基坑斜道条款；斜道/通道对象还需结合脚手架通道检查项。"
+        }
+      ],
+      "hazard_conditions": [
+        {
+          "id": "ramp_edge_protection_H1",
+          "hazard_type_id": "missing_protection",
+          "hazard_type": "防护缺失",
+          "condition": "跑道、斜道两侧或平台外围未设置防护栏杆、工具式栏板、密目式安全立网或其他可靠封闭措施，人员可直接接近坠落边缘。",
+          "visual_cues": [
+            "临边完全敞开",
+            "边缘无栏杆",
+            "人员或材料靠近未防护边缘"
+          ],
+          "text_cues": [
+            "无临边防护",
+            "临边敞开",
+            "未设栏杆"
+          ],
+          "severity_hint": "严重",
+          "default_grade": 2,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 表B.3扣件式钢管脚手架检查评分表“通道”“脚手板与防护栏杆”；标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第5.1.11条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "斜道临边缺防护由临边防护和脚手架通道要求共同支撑。"
+        },
+        {
+          "id": "ramp_edge_protection_H2",
+          "hazard_type_id": "discontinuous_protection",
+          "hazard_type": "防护不连续/不严密",
+          "condition": "跑道、斜道两侧或平台外围防护设施存在端部未封闭、局部中断、底部明显空隙或网片未封闭，不能形成连续防坠落屏障。",
+          "visual_cues": [
+            "栏杆中断",
+            "端部开口",
+            "网片缺失",
+            "底部空档"
+          ],
+          "text_cues": [
+            "防护不连续",
+            "封闭不严",
+            "端部未收口"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 59-2011 建筑施工安全检查标准/ocr/JGJ 59-2011 建筑施工安全检查标准.md 表B.3扣件式钢管脚手架检查评分表“通道”“脚手板与防护栏杆”；标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第4.3.5条、第5.1.11条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "“底部明显空隙”为挡脚板/封闭效果的视觉化表达，不作精确尺寸判断。"
+        },
+        {
+          "id": "ramp_edge_protection_H5",
+          "hazard_type_id": "temporary_substitute",
+          "hazard_type": "临时替代防护",
+          "condition": "跑道、斜道两侧或平台外围未见正式临边防护，仅以警戒带、零散木方、钢筋、模板或材料堆放形成临时阻挡，或临时拆除后未及时恢复。",
+          "visual_cues": [
+            "警戒带代替栏杆",
+            "木方临时拦挡",
+            "防护构件被拆放一旁"
+          ],
+          "text_cues": [
+            "警戒带代替",
+            "临时防护",
+            "拆除未恢复"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/结构化表格/JGJ59-2011_表B.13_高处作业检查评分表.md 临边防护；标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条、第5.1.11条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "仅在未见正式防护且临时物形成替代阻挡时触发，避免把正常材料堆放误判为防护替代。"
+        },
+        {
+          "id": "ramp_edge_protection_H7",
+          "hazard_type_id": "unfixed_or_weak_protection",
+          "hazard_type": "固定不牢/强度不足",
+          "condition": "斜道脚手板未固定、松动、翘起、探头或铺设不严，影响通行安全。",
+          "visual_cues": [
+            "脚手板翘起",
+            "脚手板探头",
+            "踏板缝隙大"
+          ],
+          "text_cues": [
+            "脚手板松动",
+            "探头板",
+            "铺板不严"
+          ],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第5.1.11条",
+          "rectification": "按对象对应要求恢复连续、牢固、严密的防护措施；涉及参数、强度或资料时应补充实测和复核。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "JGJ59 表B.3专针对脚手架水平作业层，不适用于斜道场景；JGJ80 第5.1.11条规定斜道防滑条间距及禁止沿坑壁上下，不直接涵盖脚手板翘起、松动等固定问题。本规则由斜道通行安全要求合理派生，无直接标准原文对应。"
+        },
+        {
+          "id": "ramp_edge_protection_H8",
+          "hazard_type_id": "access_or_obstruction_issue",
+          "hazard_type": "通行/障碍异常",
+          "condition": "跑道、斜道通行面或平台上随意堆放材料、设备或余料废料，占断通行路径、易绊倒滑倒，或物料可能从斜道两侧坠落。",
+          "visual_cues": [
+            "斜道上堆料",
+            "跑道堆放设备",
+            "通行面被占",
+            "平台堆杂物"
+          ],
+          "text_cues": [],
+          "severity_hint": "一般",
+          "default_grade": 3,
+          "parameters": [],
+          "source": "标准规范文件/MinerU识别结果/JGJ 80-2016 建筑施工高处作业安全技术规范/ocr/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第3.0.6条",
+          "rectification": "及时清理堆放的材料、设备和余料废料，恢复通行与边沿防护；可能坠落的物料应固定或清运。",
+          "direct_visual_decision_allowed": true,
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "source_type": "derived_from_standard",
+          "strict_standard_mapping": false,
+          "derivation_note": "依据 JGJ80 第3.0.6条派生。通用高处作业要求适用于跑道/斜道通行部位，判定为关键部位堆物/占用，归入通行/障碍异常。纯视觉判定。"
+        }
+      ],
+      "safe_conditions": [],
+      "uncertain_conditions": [
+        {
+          "id": "ramp_edge_protection_A1",
+          "condition": "图片角度只能看到作业面，无法确认临空侧是否存在或防护是否连续。",
+          "decision": "输出需复核，不直接判定隐患",
+          "visual_judgable": true,
+          "need_measurement": false,
+          "need_document": false,
+          "direct_visual_decision_allowed": true,
+          "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+          "source_type": "visual_evidence_policy",
+          "strict_standard_mapping": false,
+          "derivation_note": "斜道临空侧或防护连续性不可见时输出 uncertain。"
+        }
+      ],
+      "visual_evidence_requirements": [
+        "对象主体或关键边缘必须可见。",
+        "隐患状态必须能在图像中对应到具体部位。",
+        "涉及高度、间距、承载力、资料台账或精确尺寸的问题不纳入本阶段规则。",
+        "若需要输出 bbox，应框住对象或主要隐患区域，而不是整张图片。"
+      ],
+      "default_output_policy": {
+        "if_clear_violation": "confirmed_hazard",
+        "if_clear_compliance": "safe",
+        "if_evidence_insufficient": "uncertain"
+      }
+    }
+  ],
+  "global_uncertain_rules": [
+    {
+      "id": "global_uncertain_view_blocked",
+      "rule_text": "关键边缘、洞口、井口、防护门或防护棚被遮挡，或拍摄角度无法看到关键部位；或图像模糊、过暗、逆光过曝、目标距离过远或过小导致关键防护部位细节无法辨识时，输出 uncertain。",
+      "reason": "图像证据不足，不能硬判隐患或安全。",
+      "visual_judgable": true,
+      "need_measurement": false,
+      "need_document": false,
+      "direct_visual_decision_allowed": true,
+      "source": "视觉证据不足输出策略；依据 core/four_openings_edges_kg_v2.json 的 task_boundary、default_output_policy 和对象级 visual_evidence_requirements，不是规范扣分条文。",
+      "source_type": "visual_evidence_policy",
+      "strict_standard_mapping": false,
+      "derivation_note": "全局证据不足输出策略，不属于规范扣分项。"
+    }
+  ]
+}
