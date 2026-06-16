@@ -3,8 +3,9 @@
 提供规范文件的列表、上传、删除。上传时校验大小与扩展名，存盘后解析、切分、
 写入向量库，并把元数据落 SQLite。删除走软删除 + 向量库清理。
 
-所有端点需登录（Depends(get_current_user)）。RegulationStore 的获取做成
-get_regulation_store() 依赖函数，测试可通过 dependency_overrides 注入 fake。
+所有端点需登录（Depends(get_current_user)）。RegulationStore 复用 app 级单例
+（app.api.dependencies.get_regulation_store），与 chat 检索同一实例，避免每请求
+重建 ChromaDB 连接；测试可通过 dependency_overrides 注入 fake。
 """
 
 from __future__ import annotations
@@ -16,27 +17,15 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app.api.auth_deps import CurrentUser, get_current_user
-from app.api.dependencies import get_app_settings, get_db, get_vlm_client
+from app.api.dependencies import get_app_settings, get_db, get_regulation_store
 from app.core.config import Settings
 from app.db import repositories as repo
 from app.services.regulation_store import RegulationStore
-from app.services.responses_client import ResponsesClient
 
 router = APIRouter(prefix="/api/regulations", tags=["regulations"])
 
 # 允许的扩展名 -> 规范化 file_type。
 _ALLOWED_EXTENSIONS = {".pdf": "pdf", ".docx": "docx"}
-
-
-def get_regulation_store(
-    settings: Settings = Depends(get_app_settings),
-    vlm_client: ResponsesClient = Depends(get_vlm_client),
-) -> RegulationStore:
-    """构造生产用 RegulationStore：向量计算复用模型端点的 embed。"""
-    return RegulationStore(
-        chroma_dir=settings.chroma_dir,
-        embed_fn=lambda texts: vlm_client.embed(settings.embedding_model, texts),
-    )
 
 
 @router.get("")

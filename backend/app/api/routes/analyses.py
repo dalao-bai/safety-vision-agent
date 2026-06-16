@@ -60,6 +60,11 @@ def confirm_analyses(
     annotation_created = 0
 
     for item in body.image_confirmations:
+        # 校验图片确属本对话（conversation 已校验归属当前用户），防止携带他人
+        # image_id 越权读取分析或把他人图片写入自己的标注库。
+        image_row = repo.get_image_by_id(conn, item.image_id)
+        if image_row is None or image_row["conversation_id"] != body.conversation_id:
+            continue
         raw_analysis = repo.get_analysis_for_image(conn, item.image_id)
         if item.accurate:
             # 第三层记忆：遍历隐患做跨对话统计 upsert。
@@ -76,24 +81,22 @@ def confirm_analyses(
                     )
         else:
             all_accurate = False
-            # 不准确：整图写 annotation.db。image_id 重复（UNIQUE）则跳过。
-            image_row = repo.get_image_by_id(conn, item.image_id)
-            if image_row is not None:
-                try:
-                    anno.create_annotation_item(
-                        anno_conn,
-                        source_conversation_id=body.conversation_id,
-                        image_id=item.image_id,
-                        user_id=user.id,
-                        username=user.username,
-                        image_path=image_row["stored_path"],
-                        image_filename=image_row["stored_filename"],
-                        mime_type=image_row["mime_type"],
-                        analysis=raw_analysis or {},
-                    )
-                    annotation_created += 1
-                except sqlite3.IntegrityError:
-                    pass  # 已收集过该图，幂等跳过
+            # 不准确：整图写 annotation.db。image_id 重复（UNIQUE）则幂等跳过。
+            try:
+                anno.create_annotation_item(
+                    anno_conn,
+                    source_conversation_id=body.conversation_id,
+                    image_id=item.image_id,
+                    user_id=user.id,
+                    username=user.username,
+                    image_path=image_row["stored_path"],
+                    image_filename=image_row["stored_filename"],
+                    mime_type=image_row["mime_type"],
+                    analysis=raw_analysis or {},
+                )
+                annotation_created += 1
+            except sqlite3.IntegrityError:
+                pass  # 已收集过该图，幂等跳过
 
     repo.set_conversation_confirmed(conn, body.conversation_id, user.id, all_accurate)
 

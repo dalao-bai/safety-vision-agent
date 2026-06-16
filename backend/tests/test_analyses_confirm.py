@@ -151,6 +151,38 @@ def test_confirm_other_users_conversation_returns_404(client):
     assert resp.status_code == 404
 
 
+def test_confirm_ignores_image_from_another_conversation(client):
+    """携带不属于本对话的 image_id（即便 conversation_id 是自己的）应被忽略，不越权读写。"""
+    test_client, ctx = client
+    # 另建一条他人对话 + 图片 + 分析。
+    conn = connect(ctx["db_path"])
+    init_db(conn)
+    other_uid = repo.create_user(conn, "bob", "hash")  # 真实用户，满足外键
+    other_cid = repo.create_conversation(conn, user_id=other_uid)
+    foreign_image_id = repo.add_uploaded_image(
+        conn, other_cid, "/x/y.jpg", "y.jpg", "image/jpeg", 50
+    )
+    repo.save_analysis_result(conn, other_cid, _ANALYSIS, image_id=foreign_image_id)
+    conn.close()
+
+    resp = test_client.post(
+        "/api/analyses/confirm",
+        json={
+            "conversation_id": ctx["cid"],  # 自己拥有的对话
+            "image_confirmations": [{"image_id": foreign_image_id, "accurate": False}],
+        },
+    )
+    assert resp.status_code == 200
+    # 外部图被忽略：未写入 annotation，未影响统计。
+    assert resp.json()["annotation_items_created"] == 0
+    aconn = anno.connect_annotation(ctx["anno_path"])
+    try:
+        items = anno.list_annotation_items(aconn, ctx["user_id"])
+    finally:
+        aconn.close()
+    assert items == []
+
+
 def test_duplicate_inaccurate_confirmation_is_idempotent(client):
     test_client, ctx = client
     payload = {
