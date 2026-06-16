@@ -119,3 +119,24 @@ def test_load_reads_real_assets():
     r = ClauseRetriever.load(get_settings())
     assert r.name2id.get("基坑临边防护") == "foundation_pit_edge_protection"
     assert "JGJ 80-2016" in r.standards
+
+
+def test_retrieve_secondary_match_by_rule_basis():
+    # 主键 (object,status,hazard) 不命中（status 改成 uncertain），但 rule_basis 文本精确匹配规则
+    r = _retriever()
+    obj = FoeObject.model_validate({
+        "related_object": "基坑临边防护", "object_bbox": [0, 0, 1, 1],
+        "status": "uncertain", "visual_evidence": "x",
+        "rule_basis": "开挖深度2m及以上…未设置防护栏杆…",  # == RULE_BLOCKS[0]["rule_text"]
+    })
+    refs = r.retrieve(obj)
+    assert any(ref.clause_id == "第4.1.1条" for ref in refs)
+
+
+def test_clause_text_index_fallback():
+    # standards 为空，clause_index 含该条 → 走索引兜底
+    idx = "第4.1.1条 坠落高度基准面2m及以上应设置防护栏杆。\n其他行\n"
+    r = ClauseRetriever(rule_blocks=[], standards={}, clause_index=idx)
+    text = r.clause_text("JGJ 80-2016", "4.1.1")
+    assert text is not None
+    assert "防护栏杆" in text

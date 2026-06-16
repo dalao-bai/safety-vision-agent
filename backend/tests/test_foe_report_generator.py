@@ -48,3 +48,31 @@ def test_task_registry_roundtrip():
 
 def test_unknown_task_returns_none():
     assert foe.get_task("nope") is None
+
+
+def test_image_ref_outside_root_not_embedded_and_not_leaked(tmp_path):
+    # image_ref 指向 image_root 之外的文件：不嵌入、不泄露路径、不抛异常
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOPSECRET")
+    analysis = FoeAnalysis(image_ref=str(secret), objects=[FoeObject(
+        related_object="基坑临边防护", object_bbox=[0, 0, 1, 1],
+        status="safe", visual_evidence="x",
+    )])
+    out_dir = tmp_path / "out"
+    path = foe.generate_foe_report_docx(
+        [analysis], _FakeRetriever(), str(out_dir),
+        image_root=str(tmp_path / "allowed"),  # secret 不在该目录内
+    )
+    full = "\n".join(p.text for p in Document(path).paragraphs)
+    assert "secret.txt" not in full
+    assert str(secret) not in full
+    assert "TOPSECRET" not in full
+
+
+def test_set_task_error_path():
+    tid = foe.create_task("u")
+    foe.set_task_error(tid, "boom")
+    view = foe.get_task(tid)
+    assert view["status"] == "error"
+    assert view["error"] == "boom"
+    assert "download_url" not in view

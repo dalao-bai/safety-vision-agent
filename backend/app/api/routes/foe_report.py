@@ -29,13 +29,16 @@ class GenerateResponse(BaseModel):
 
 
 def _run_foe_report(
-    task_id: str, analyses_data: list[dict], title: str | None, output_dir: str
+    task_id: str, analyses_data: list[dict], title: str | None,
+    output_dir: str, image_root: str,
 ) -> None:
     """后台任务体：构造检索器(单例) + 渲染报告，结果写回任务表。"""
     try:
         analyses = [FoeAnalysis.model_validate(a) for a in analyses_data]
         retriever = get_clause_retriever()
-        path = foe.generate_foe_report_docx(analyses, retriever, output_dir, title)
+        path = foe.generate_foe_report_docx(
+            analyses, retriever, output_dir, title, image_root=image_root
+        )
         foe.set_task_done(task_id, path)
     except Exception as exc:  # noqa: BLE001 - 失败记录给状态查询
         foe.set_task_error(task_id, str(exc))
@@ -55,6 +58,7 @@ def generate(
         [a.model_dump() for a in body.analyses],
         body.title,
         settings.report_dir,
+        settings.upload_dir,
     )
     return GenerateResponse(task_id=task_id)
 

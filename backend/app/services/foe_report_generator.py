@@ -20,8 +20,31 @@ _STEP_LABELS = {"observe": "观察", "locate": "定位", "match_rule": "匹配�
 _IMAGE_WIDTH = Inches(3.5)
 
 
+def _is_within(path: str, root: str | None) -> bool:
+    """仅允许嵌入位于 root 目录内的真实文件，阻止任意文件系统路径（如 /etc/passwd、.env）。
+
+    image_ref 来自请求体、客户端可控；不做约束会让登录用户用报告做文件探测/外泄。
+    root 为 None（未配置可信目录）时一律不嵌入。
+    """
+    if not root:
+        return False
+    try:
+        root_real = os.path.realpath(root)
+        target_real = os.path.realpath(path)
+        return (
+            os.path.exists(target_real)
+            and os.path.commonpath([root_real, target_real]) == root_real
+        )
+    except (ValueError, OSError):
+        return False
+
+
 def generate_foe_report_docx(
-    analyses: list[FoeAnalysis], retriever, output_dir: str, title: str | None = None
+    analyses: list[FoeAnalysis],
+    retriever,
+    output_dir: str,
+    title: str | None = None,
+    image_root: str | None = None,
 ) -> str:
     """生成 .docx 报告，返回绝对路径。retriever 须有 retrieve(FoeObject)->[ClauseRef]。"""
     os.makedirs(output_dir, exist_ok=True)
@@ -37,11 +60,11 @@ def generate_foe_report_docx(
     for idx, analysis in enumerate(analyses, 1):
         doc.add_heading(f"图片 {idx}", level=1)
         ref_path = analysis.image_ref
-        if ref_path and os.path.exists(ref_path):
+        if ref_path and _is_within(ref_path, image_root):
             try:
                 doc.add_picture(ref_path, width=_IMAGE_WIDTH)
-            except Exception as exc:  # noqa: BLE001 - 缺图不应中断报告
-                doc.add_paragraph(f"（图片无法嵌入：{ref_path}，{exc}）")
+            except Exception:  # noqa: BLE001 - 坏图不应中断报告，且不回显用户提供的路径
+                doc.add_paragraph("（图片无法嵌入）")
 
         if not analysis.objects:
             doc.add_paragraph("未识别到四口五临边对象。")

@@ -55,3 +55,10 @@ def test_status_foreign_task_404(client):
     task_id = resp.json()["task_id"]
     app.dependency_overrides[get_current_user] = lambda: CurrentUser(id="other", username="o")
     assert client.get(f"/api/foe/report/status/{task_id}").status_code == 404
+
+
+def test_download_foreign_task_404(client):
+    resp = client.post("/api/foe/report", json=_BODY)
+    task_id = resp.json()["task_id"]
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(id="other", username="o")
+    assert client.get(f"/api/foe/report/download/{task_id}").status_code == 404
