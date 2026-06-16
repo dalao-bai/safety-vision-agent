@@ -13,6 +13,7 @@ from app.api.routes.analyses import router as analyses_router
 from app.api.routes.annotation import router as annotation_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
+from app.api.routes.foe_report import router as foe_report_router
 from app.api.routes.history import router as history_router
 from app.api.routes.regulations import router as regulations_router
 from app.api.routes.report import router as report_router
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(history_router)
     app.include_router(annotation_router)
     app.include_router(report_router)
+    app.include_router(foe_report_router)
 
     # Touch settings so missing/invalid configuration surfaces at startup.
     get_settings()
