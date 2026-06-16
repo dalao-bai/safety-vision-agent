@@ -1,5 +1,7 @@
 # backend/tests/test_clause_retriever.py
+from app.models.foe_schemas import FoeObject
 from app.services.clause_retriever import (
+    ClauseRetriever,
     extract_clause,
     normalize_code,
     parse_sources,
@@ -56,3 +58,56 @@ def test_extract_clause_two_level_section_stops_before_subclause():
     assert text is not None
     assert text.startswith("临边作业总则")
     assert "坠落" not in text
+
+
+RULE_BLOCKS = [
+    {
+        "rule_id": "foundation_pit_edge_protection_H1",
+        "object_id": "foundation_pit_edge_protection",
+        "object_name": "基坑临边防护",
+        "status_target": "confirmed_hazard",
+        "hazard_type_id": "missing_protection",
+        "rule_text": "开挖深度2m及以上…未设置防护栏杆…",
+        "source": (
+            "…/JGJ 80-2016 建筑施工高处作业安全技术规范.md 第4.1.1条、第4.3.1条"
+        ),
+    }
+]
+STANDARDS = {"JGJ 80-2016": STD_MD}
+
+
+def _retriever():
+    return ClauseRetriever(rule_blocks=RULE_BLOCKS, standards=STANDARDS, clause_index="")
+
+
+def test_name_to_id_mapping():
+    r = _retriever()
+    assert r.name2id["基坑临边防护"] == "foundation_pit_edge_protection"
+
+
+def test_retrieve_returns_official_clause_text():
+    r = _retriever()
+    obj = FoeObject.model_validate(
+        {
+            "related_object": "基坑临边防护",
+            "object_bbox": [0, 0, 1, 1],
+            "status": "confirmed_hazard",
+            "hazard_type_id": "missing_protection",
+            "visual_evidence": "x",
+        }
+    )
+    refs = r.retrieve(obj)
+    ids = {(ref.standard_code, ref.clause_id) for ref in refs}
+    assert ("JGJ 80-2016", "第4.1.1条") in ids
+    assert ("JGJ 80-2016", "第4.3.1条") in ids
+    first = next(ref for ref in refs if ref.clause_id == "第4.1.1条")
+    assert first.official_text.startswith("坠落高度基准面2m及以上")
+
+
+def test_retrieve_no_match_returns_empty():
+    r = _retriever()
+    obj = FoeObject.model_validate(
+        {"related_object": "未知对象", "object_bbox": [0, 0, 1, 1],
+         "status": "safe", "visual_evidence": "x"}
+    )
+    assert r.retrieve(obj) == []

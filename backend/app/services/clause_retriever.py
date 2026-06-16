@@ -80,3 +80,101 @@ def extract_clause(markdown_text: str, clause_num: str) -> str | None:
             buf.append(line.strip())
     text = "\n".join(buf).strip()
     return text or None
+
+
+class ClauseRetriever:
+    """混合条款检索器。构造接受已加载数据(便于测试)，load() 从文件构造。"""
+
+    def __init__(
+        self,
+        rule_blocks: list[dict],
+        standards: dict[str, str],
+        clause_index: str = "",
+        semantic_search=None,
+    ):
+        self.rule_blocks = rule_blocks
+        self.standards = standards          # {标准码: markdown 全文}
+        self.clause_index = clause_index    # 四口五临边标准引用索引.md 全文
+        self.semantic_search = semantic_search
+        self.name2id: dict[str, str] = {}
+        self._by_key: dict[tuple, list[dict]] = {}
+        for r in rule_blocks:
+            oid, oname = r.get("object_id"), r.get("object_name")
+            if oid and oname:
+                self.name2id[oname] = oid
+            key = (r.get("object_id"), r.get("status_target"), r.get("hazard_type_id"))
+            self._by_key.setdefault(key, []).append(r)
+
+    @classmethod
+    def load(cls, settings) -> "ClauseRetriever":
+        """从配置路径加载 rule_blocks + 标准 markdown + 索引。"""
+        rb_path = _REPO_ROOT / settings.foe_rule_blocks
+        rule_blocks = json.loads(rb_path.read_text(encoding="utf-8-sig"))
+
+        standards: dict[str, str] = {}
+        mineru = _REPO_ROOT / settings.foe_standards_dir / "MinerU识别结果"
+        if mineru.exists():
+            for md in mineru.glob("*/ocr/*.md"):
+                m = _STD_CODE.search(md.name)
+                if m:
+                    standards[normalize_code(m.group())] = md.read_text(encoding="utf-8")
+
+        clause_index = ""
+        idx = _REPO_ROOT / settings.foe_clause_index
+        if idx.exists():
+            clause_index = idx.read_text(encoding="utf-8")
+
+        return cls(rule_blocks, standards, clause_index)
+
+    def match_rules(self, object_id, status, hazard_type_id) -> list[dict]:
+        return self._by_key.get((object_id, status, hazard_type_id), [])
+
+    def clause_text(self, code: str, clause_num: str) -> str | None:
+        md = self.standards.get(code)
+        if md:
+            text = extract_clause(md, clause_num)
+            if text:
+                return text
+        # 索引兜底：找 "第x.y.z条" 所在行
+        if self.clause_index:
+            marker = f"第{clause_num}条"
+            i = self.clause_index.find(marker)
+            if i != -1:
+                line = self.clause_index[i:].splitlines()[0].strip()
+                return line or None
+        return None
+
+    def retrieve(self, obj: FoeObject) -> list[ClauseRef]:
+        object_id = self.name2id.get(obj.related_object, obj.related_object)
+        rules = self.match_rules(object_id, obj.status, obj.hazard_type_id)
+        if not rules and obj.rule_basis:
+            rules = [r for r in self.rule_blocks if r.get("rule_text") == obj.rule_basis]
+
+        refs: list[ClauseRef] = []
+        seen: set[tuple[str, str]] = set()
+        for r in rules:
+            src = r.get("source") or ""
+            for code, clause_num in parse_sources(src):
+                if (code, clause_num) in seen:
+                    continue
+                seen.add((code, clause_num))
+                text = self.clause_text(code, clause_num)
+                if text:
+                    refs.append(ClauseRef(
+                        standard_code=code,
+                        clause_id=f"第{clause_num}条",
+                        official_text=text,
+                        paraphrase=r.get("rule_text"),
+                        source_raw=src,
+                    ))
+
+        if not refs and self.semantic_search and obj.rule_basis:
+            for hit in self.semantic_search(obj.rule_basis):
+                refs.append(ClauseRef(
+                    standard_code=hit.get("standard_code", ""),
+                    clause_id=hit.get("clause_id", ""),
+                    official_text=hit.get("text", ""),
+                    paraphrase=obj.rule_basis,
+                    source_raw="semantic",
+                ))
+        return refs
