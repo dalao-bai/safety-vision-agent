@@ -38,3 +38,23 @@ def test_build_and_search(tmp_path: Path):
 def test_search_before_build_returns_empty(tmp_path: Path):
     idx = StandardsIndex(persist_dir=str(tmp_path / "chroma"), embedder=_fake_embedder)
     assert idx.search("anything", top_k=3) == []
+
+
+def test_chunk_markdown_no_headings():
+    chunks = chunk_markdown("没有任何标题的纯文本。", source="x.md")
+    assert len(chunks) == 1
+    assert chunks[0]["text"] == "没有任何标题的纯文本。"
+    assert chunks[0]["heading"] == ""
+
+
+def test_chunk_markdown_empty():
+    assert chunk_markdown("", source="x.md") == []
+
+
+def test_build_returns_chunk_count(tmp_path):
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("## 1\n甲。\n", encoding="utf-8")
+    (corpus / "b.md").write_text("## 2\n乙。\n", encoding="utf-8")
+    idx = StandardsIndex(persist_dir=str(tmp_path / "chroma"), embedder=_fake_embedder)
+    assert idx.build([corpus]) == 2
