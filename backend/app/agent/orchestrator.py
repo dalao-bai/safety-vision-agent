@@ -39,6 +39,10 @@ class Orchestrator:
         for _ in range(self._max_iter):
             resp = self._client.chat.completions.create(
                 model=self._model, messages=messages, tools=TOOL_SCHEMAS, temperature=0)
+            if not resp.choices:
+                fallback = "模型未返回任何结果,请稍后再试。"
+                self._db.add_message(session_id, "assistant", fallback)
+                return fallback
             msg = resp.choices[0].message
             tool_calls = getattr(msg, "tool_calls", None)
             if not tool_calls:
@@ -52,19 +56,24 @@ class Orchestrator:
             for tc in tool_calls:
                 try:
                     args = json.loads(tc.function.arguments or "{}")
-                    result = dispatch_tool(tc.function.name, args, ctx)
+                    tool_result = dispatch_tool(tc.function.name, args, ctx)
                 except Exception as exc:
-                    result = {"error": str(exc)}
+                    tool_result = {"error": str(exc)}
                 messages.append({"role": "tool", "tool_call_id": tc.id,
-                                 "content": json.dumps(result, ensure_ascii=False)})
+                                 "content": json.dumps(tool_result, ensure_ascii=False)})
 
         fallback = "我已多次尝试调用工具但未能得出最终回答,请换个问法或稍后再试。"
         self._db.add_message(session_id, "assistant", fallback)
         return fallback
 
     def _build_messages(self, session_id: int) -> list[dict[str, Any]]:
-        history = [{"role": "system", "content": SYSTEM_PROMPT}]
+        system_parts = [SYSTEM_PROMPT]
+        convo: list[dict[str, Any]] = []
         for m in self._db.get_messages(session_id):
-            role = m.role if m.role in ("user", "assistant", "system") else "user"
-            history.append({"role": role, "content": m.content})
-        return history
+            if m.role == "system":
+                system_parts.append(m.content)
+            elif m.role in ("user", "assistant"):
+                convo.append({"role": m.role, "content": m.content})
+            else:
+                convo.append({"role": "user", "content": m.content})
+        return [{"role": "system", "content": "\n".join(system_parts)}] + convo

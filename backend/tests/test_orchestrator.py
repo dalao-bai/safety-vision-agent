@@ -90,7 +90,7 @@ def test_loop_stops_at_max_iterations(tmp_path, kg_path):
     orch, db, _ = _orch(tmp_path, kg_path, script)
     sid = db.create_session()
     reply = orch.handle_message(sid, "loop?")
-    assert isinstance(reply, str)  # returns a fallback, does not hang
+    assert "尝试" in reply
 
 
 def test_handle_image_persists_and_presents(tmp_path, kg_path):
@@ -109,3 +109,21 @@ def test_handle_image_persists_and_presents(tmp_path, kg_path):
     assert hz[0].missing_evidence == "栏杆是否被遮挡"
     # the presentation/confirmation message was stored as an assistant message
     assert any("是否正确" in m.content for m in db.get_messages(sid) if m.role == "assistant")
+
+
+def test_build_messages_single_leading_system(tmp_path, kg_path):
+    from app.vlm.detector import DetectionResult, Hazard
+    orch, db, _ = _orch(tmp_path, kg_path, [])
+    sid = db.create_session()
+    result = DetectionResult(scene="four_openings_edges", hazards=[
+        Hazard(object_id="foundation_pit_edge_protection", object_name="基坑临边防护",
+               status="confirmed_hazard", hazard_type_id="missing_protection", hazard_type="防护缺失",
+               bbox=[1, 2, 3, 4], visual_evidence="ev", rule_basis="", evidence_sufficiency="sufficient",
+               uncertainty_reason=None, reasoning_chain=[], missing_evidence=None)])
+    img_id = orch.handle_image(sid, "p.png", result)
+    db.add_message(sid, "user", "hi")
+    msgs = orch._build_messages(sid)
+    system_msgs = [m for m in msgs if m["role"] == "system"]
+    assert len(system_msgs) == 1
+    assert msgs[0]["role"] == "system"
+    assert f"image_id={img_id}" in msgs[0]["content"]  # context hoisted into leading system block
