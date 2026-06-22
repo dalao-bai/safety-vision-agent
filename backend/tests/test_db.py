@@ -77,3 +77,31 @@ def test_reasoning_chain_none_normalizes_to_list(tmp_path: Path):
     h = db.get_hazards(img_id)[0]
     assert h.reasoning_chain == []
     assert h.bbox is None
+
+
+def test_hazard_uncertainty_fields_roundtrip(tmp_path):
+    from app.persistence.db import Database
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "s")
+    db.add_hazards(img_id, [{"object_id": "o", "status": "uncertain",
+                             "hazard_type_id": None, "bbox": [1, 2, 3, 4], "reasoning_chain": [],
+                             "visual_evidence": "", "rule_basis": "", "evidence_sufficiency": "insufficient",
+                             "uncertainty_reason": "protective_component_not_visible",
+                             "missing_evidence": "栏杆是否连续被遮挡"}])
+    h = db.get_hazards(img_id)[0]
+    assert h.uncertainty_reason == "protective_component_not_visible"
+    assert h.missing_evidence == "栏杆是否连续被遮挡"
+
+
+def test_hazard_uncertainty_fields_default_none(tmp_path):
+    from app.persistence.db import Database
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "s")
+    db.add_hazards(img_id, [{"object_id": "o", "status": "confirmed_hazard",
+                             "hazard_type_id": "missing_protection", "bbox": [1, 2, 3, 4],
+                             "reasoning_chain": [], "visual_evidence": "", "rule_basis": "",
+                             "evidence_sufficiency": "sufficient"}])
+    h = db.get_hazards(img_id)[0]
+    assert h.uncertainty_reason is None and h.missing_evidence is None

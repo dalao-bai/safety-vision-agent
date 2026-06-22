@@ -36,6 +36,8 @@ class Hazard:
     rule_basis: str = ""
     evidence_sufficiency: str = ""
     confirmed: bool = False
+    uncertainty_reason: str | None = None
+    missing_evidence: str | None = None
 
 
 @dataclass

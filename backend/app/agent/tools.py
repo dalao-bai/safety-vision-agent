@@ -6,6 +6,7 @@ from typing import Any
 from app.kg.store import KGStore
 from app.persistence.db import Database
 from app.reports.builder import build_markdown_report
+from app.vlm.detector import DetectionResult, Hazard as VHazard
 
 
 @dataclass
@@ -55,13 +56,16 @@ TOOL_SCHEMAS = [
 def _hazard_brief(h) -> dict:
     return {"image_id": h.image_id, "object_id": h.object_id, "status": h.status,
             "hazard_type_id": h.hazard_type_id, "bbox": h.bbox,
-            "visual_evidence": h.visual_evidence, "confirmed": h.confirmed}
+            "visual_evidence": h.visual_evidence, "rule_basis": h.rule_basis,
+            "evidence_sufficiency": h.evidence_sufficiency, "confirmed": h.confirmed}
 
 
 def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     if name == "query_kg":
         oid = args.get("object_id")
         hid = args.get("hazard_type_id")
+        if not oid and not hid:
+            return {"error": "at least one of object_id or hazard_type_id is required"}
         out: dict[str, Any] = {}
         if oid:
             obj = ctx.kg.get_object(oid) or {}
@@ -88,14 +92,17 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str
         img_id = int(args["image_id"])
         note = args["note"]
         image = ctx.db.get_image(img_id)
-        from app.vlm.detector import DetectionResult, Hazard as VHazard
         stored = ctx.db.get_hazards(img_id)
+        if not stored:
+            return {"ok": False, "error": f"no hazards stored for image {img_id}"}
         result = DetectionResult(scene=image.scene, hazards=[
             VHazard(object_id=h.object_id, object_name=(ctx.kg.get_object(h.object_id) or {}).get("name", ""),
                     status=h.status, hazard_type_id=h.hazard_type_id,
                     hazard_type=(ctx.kg.get_hazard_type(h.hazard_type_id) or {}).get("name") if h.hazard_type_id else None,
                     bbox=h.bbox, visual_evidence=h.visual_evidence, rule_basis=h.rule_basis,
-                    evidence_sufficiency=h.evidence_sufficiency, uncertainty_reason=None,
+                    evidence_sufficiency=h.evidence_sufficiency,
+                    uncertainty_reason=h.uncertainty_reason,
+                    missing_evidence=h.missing_evidence,
                     reasoning_chain=h.reasoning_chain) for h in stored])
         intake_path = ctx.intake.deposit(image_path=image.path, result=result, note=note)
         ctx.db.add_correction(img_id, note=note, intake_path=intake_path)

@@ -68,3 +68,47 @@ def test_unknown_tool_raises(tmp_path, kg_path):
     import pytest
     with pytest.raises(ValueError):
         dispatch_tool("nope", {}, ctx)
+
+
+class FakeIntake:
+    def __init__(self):
+        self.last = None
+
+    def deposit(self, image_path, result, note):
+        self.last = (image_path, result, note)
+        return "runtime/pipeline_intake"
+
+
+def test_submit_correction_threads_uncertainty(tmp_path, kg_path):
+    from app.kg.store import KGStore
+    from app.persistence.db import Database
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "four_openings_edges")
+    db.add_hazards(img_id, [{"object_id": "foundation_pit_edge_protection", "status": "uncertain",
+                             "hazard_type_id": None, "bbox": [1, 2, 3, 4], "reasoning_chain": [],
+                             "visual_evidence": "", "rule_basis": "", "evidence_sufficiency": "insufficient",
+                             "uncertainty_reason": "protective_component_not_visible",
+                             "missing_evidence": "栏杆是否连续被遮挡"}])
+    intake = FakeIntake()
+    ctx = ToolContext(db=db, kg=KGStore.load(str(kg_path)), standards=FakeStandards(),
+                      intake=intake, report_dir=str(tmp_path), session_id=sid)
+    out = dispatch_tool("submit_correction", {"image_id": img_id, "note": "不对"}, ctx)
+    assert out["ok"] is True
+    _, result, note = intake.last
+    assert note == "不对"
+    assert result.hazards[0].uncertainty_reason == "protective_component_not_visible"
+    assert result.hazards[0].missing_evidence == "栏杆是否连续被遮挡"
+    assert db.get_image(img_id).status == "corrected_submitted"
+
+
+def test_submit_correction_empty_hazards_guard(tmp_path, kg_path):
+    from app.kg.store import KGStore
+    from app.persistence.db import Database
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "four_openings_edges")  # no hazards
+    ctx = ToolContext(db=db, kg=KGStore.load(str(kg_path)), standards=FakeStandards(),
+                      intake=FakeIntake(), report_dir=str(tmp_path), session_id=sid)
+    out = dispatch_tool("submit_correction", {"image_id": img_id, "note": "x"}, ctx)
+    assert out["ok"] is False

@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS hazards (
   visual_evidence TEXT,
   rule_basis TEXT,
   evidence_sufficiency TEXT,
+  uncertainty_reason TEXT,
+  missing_evidence TEXT,
   confirmed INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS corrections (
@@ -120,14 +122,16 @@ class Database:
             for h in hazards:
                 self._conn.execute(
                     """INSERT INTO hazards(image_id, object_id, status, hazard_type_id, bbox,
-                        reasoning_chain, visual_evidence, rule_basis, evidence_sufficiency, confirmed)
-                       VALUES(?,?,?,?,?,?,?,?,?,0)""",
+                        reasoning_chain, visual_evidence, rule_basis, evidence_sufficiency,
+                        uncertainty_reason, missing_evidence, confirmed)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,0)""",
                     (
                         img_id, h.get("object_id", ""), h.get("status", ""), h.get("hazard_type_id"),
                         json.dumps(h.get("bbox"), ensure_ascii=False),
                         json.dumps(h.get("reasoning_chain") or [], ensure_ascii=False),
                         h.get("visual_evidence", ""), h.get("rule_basis", ""),
                         h.get("evidence_sufficiency", ""),
+                        h.get("uncertainty_reason"), h.get("missing_evidence"),
                     ),
                 )
             self._conn.commit()
