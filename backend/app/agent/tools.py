@@ -19,6 +19,13 @@ class ToolContext:
     session_id: int
 
 
+def _owns_image(ctx: "ToolContext", img_id: int) -> bool:
+    try:
+        return ctx.db.get_image(img_id).session_id == ctx.session_id
+    except KeyError:
+        return False
+
+
 TOOL_SCHEMAS = [
     {"type": "function", "function": {
         "name": "query_kg",
@@ -50,6 +57,11 @@ TOOL_SCHEMAS = [
         "name": "export_report",
         "description": "把本会话已确认隐患导出为 Markdown 报告,返回下载路径。",
         "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "confirm_hazards",
+        "description": "当用户确认某张图的识别结果正确时调用,将该图隐患标记为已确认(确认后才会纳入导出报告)。",
+        "parameters": {"type": "object", "properties": {
+            "image_id": {"type": "integer"}}, "required": ["image_id"]}}},
 ]
 
 
@@ -84,12 +96,16 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str
     if name == "get_session_hazards":
         img_id = args.get("image_id")
         if img_id:
+            if not _owns_image(ctx, int(img_id)):
+                return {"hazards": [], "error": f"image {img_id} not in this session"}
             hz = ctx.db.get_hazards(int(img_id))
         else:
             hz = ctx.db.get_session_hazards(ctx.session_id)
         return {"hazards": [_hazard_brief(h) for h in hz]}
     if name == "submit_correction":
         img_id = int(args["image_id"])
+        if not _owns_image(ctx, img_id):
+            return {"ok": False, "error": f"image {img_id} not in this session"}
         note = args["note"]
         image = ctx.db.get_image(img_id)
         stored = ctx.db.get_hazards(img_id)
@@ -116,4 +132,11 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str
             hazard_name_for=lambda hid: (ctx.kg.get_hazard_type(hid) or {}).get("name", hid or ""),
             remediation_for=ctx.kg.remediation_for)
         return {"report_path": path}
+    if name == "confirm_hazards":
+        img_id = int(args["image_id"])
+        if not _owns_image(ctx, img_id):
+            return {"ok": False, "error": f"image {img_id} not in this session"}
+        ctx.db.mark_hazards_confirmed(img_id)
+        ctx.db.set_image_status(img_id, "confirmed")
+        return {"ok": True, "image_id": img_id}
     raise ValueError(f"unknown tool: {name}")

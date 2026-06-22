@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -8,6 +9,7 @@ import app.api.deps as deps
 from app.config import get_settings
 from app.agent.orchestrator import Orchestrator
 from app.agent.tools import ToolContext
+from app.vlm.detector import DetectionError
 
 router = APIRouter()
 
@@ -34,12 +36,16 @@ def upload_image(sid: int, file: UploadFile = File(...),
 
     upload_dir = Path(settings.upload_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
-    dest = (upload_dir / f"{sid}_{abs(hash(data)) % 10**10}{suffix}").resolve()
+    digest = hashlib.sha1(data).hexdigest()[:16]
+    dest = (upload_dir / f"{sid}_{digest}{suffix}").resolve()
     if not dest.is_relative_to(upload_dir.resolve()):
         raise HTTPException(400, "invalid path")
     dest.write_bytes(data)
 
-    result = detector.detect(str(dest))
+    try:
+        result = detector.detect(str(dest))
+    except DetectionError as exc:
+        raise HTTPException(422, f"识别失败: {exc}")
     ctx_factory = lambda session_id: ToolContext(db=db, kg=kg, standards=standards, intake=intake,
                                                   report_dir=settings.report_dir, session_id=session_id)
     orch = Orchestrator(db=db, agent_client=agent_client, agent_model=settings.agent_model,

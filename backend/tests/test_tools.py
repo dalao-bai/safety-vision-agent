@@ -24,7 +24,7 @@ def _ctx(tmp_path, kg_path):
 def test_schemas_cover_five_tools():
     names = {t["function"]["name"] for t in TOOL_SCHEMAS}
     assert names == {"query_kg", "search_standards", "get_session_hazards",
-                     "submit_correction", "export_report"}
+                     "submit_correction", "export_report", "confirm_hazards"}
 
 
 def test_query_kg(tmp_path, kg_path):
@@ -111,4 +111,28 @@ def test_submit_correction_empty_hazards_guard(tmp_path, kg_path):
     ctx = ToolContext(db=db, kg=KGStore.load(str(kg_path)), standards=FakeStandards(),
                       intake=FakeIntake(), report_dir=str(tmp_path), session_id=sid)
     out = dispatch_tool("submit_correction", {"image_id": img_id, "note": "x"}, ctx)
+    assert out["ok"] is False
+
+
+def test_confirm_hazards(tmp_path, kg_path):
+    ctx, img_id = _ctx(tmp_path, kg_path)
+    out = dispatch_tool("confirm_hazards", {"image_id": img_id}, ctx)
+    assert out["ok"] is True
+    assert ctx.db.get_hazards(img_id)[0].confirmed is True
+    assert ctx.db.get_image(img_id).status == "confirmed"
+
+
+def test_confirm_hazards_wrong_session(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    other = ctx.db.create_session()
+    other_img = ctx.db.add_image(other, "p2.png", "four_openings_edges")
+    out = dispatch_tool("confirm_hazards", {"image_id": other_img}, ctx)
+    assert out["ok"] is False
+
+
+def test_submit_correction_wrong_session(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    other = ctx.db.create_session()
+    other_img = ctx.db.add_image(other, "p2.png", "four_openings_edges")
+    out = dispatch_tool("submit_correction", {"image_id": other_img, "note": "x"}, ctx)
     assert out["ok"] is False

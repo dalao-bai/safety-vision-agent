@@ -71,3 +71,13 @@ def test_double_deposit_preserves_both(tiny_png, tmp_path):
     assert notes == {"第一次纠错", "第二次纠错"}
     # paired drafts also both present
     assert len(list((tmp_path / "intake" / "images").glob("*.json"))) == 2
+
+
+def test_correction_sidecar_has_reasoning_and_rule(tiny_png, tmp_path):
+    import json as _json
+    w = IntakeWriter(intake_dir=str(tmp_path / "intake"))
+    w.deposit(image_path=str(tiny_png), result=_result(), note="x")
+    corr = next((tmp_path / "intake" / "corrections").glob("*.correction.json"))
+    h0 = _json.loads(corr.read_text(encoding="utf-8"))["original_vlm"]["hazards"][0]
+    assert h0["rule_basis"] == "rb"
+    assert h0["reasoning_chain"] == [{"step": "observe", "content": "x"}]

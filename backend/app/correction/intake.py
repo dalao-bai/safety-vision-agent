@@ -27,6 +27,13 @@ def _hazard_to_pipeline_object(h: Hazard) -> dict:
     }
 
 
+def _hazard_snapshot(h: Hazard) -> dict:
+    d = _hazard_to_pipeline_object(h)
+    d["rule_basis"] = h.rule_basis
+    d["reasoning_chain"] = h.reasoning_chain
+    return d
+
+
 class IntakeWriter:
     def __init__(self, intake_dir: str):
         self._dir = Path(intake_dir)
@@ -66,7 +73,7 @@ class IntakeWriter:
             "note": note,
             "original_vlm": {
                 "scene": result.scene,
-                "hazards": [_hazard_to_pipeline_object(h) for h in result.hazards],
+                "hazards": [_hazard_snapshot(h) for h in result.hazards],
             },
         }
         (corrections / f"{stem}.correction.json").write_text(
