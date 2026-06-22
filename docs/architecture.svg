@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="800" viewBox="0 0 1060 800" font-family="'Microsoft YaHei','PingFang SC','Noto Sans CJK SC','Segoe UI',sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .lbl{fill:#0f172a;font-size:14px;}
+      .sub{fill:#475569;font-size:11px;}
+      .ttl{fill:#0f172a;font-size:13px;font-weight:bold;}
+      .chip{fill:#1e293b;font-size:12px;}
+      .edge{stroke:#475569;stroke-width:1.6;fill:none;}
+      .edgelbl{fill:#64748b;font-size:11px;}
+      .note{fill:#94a3b8;font-size:11px;}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1060" height="800" fill="#f8fafc"/>
+  <text x="530" y="34" text-anchor="middle" fill="#0f172a" font-size="20" font-weight="bold">四口五临边交互式隐患问答助手 — 系统架构</text>
+  <text x="530" y="54" text-anchor="middle" class="note">方案 C：识别确定化（上传即触发，非工具） + 问答工具循环</text>
+
+  <!-- Client -->
+  <rect x="420" y="72" width="220" height="52" rx="10" fill="#e0f2fe" stroke="#0284c7"/>
+  <text x="530" y="94" text-anchor="middle" class="ttl">用户 / 前端</text>
+  <text x="530" y="112" text-anchor="middle" class="sub">上传图片 · 多轮对话提问</text>
+
+  <!-- API layer -->
+  <rect x="120" y="156" width="820" height="74" rx="10" fill="#eef2ff" stroke="#4f46e5"/>
+  <text x="135" y="176" class="ttl">FastAPI 后端</text>
+  <rect x="150" y="186" width="170" height="32" rx="6" fill="#fff" stroke="#a5b4fc"/>
+  <text x="235" y="206" text-anchor="middle" class="chip">POST /sessions</text>
+  <rect x="335" y="186" width="200" height="32" rx="6" fill="#fff" stroke="#a5b4fc"/>
+  <text x="435" y="206" text-anchor="middle" class="chip">POST …/images（识别）</text>
+  <rect x="550" y="186" width="210" height="32" rx="6" fill="#fff" stroke="#a5b4fc"/>
+  <text x="655" y="206" text-anchor="middle" class="chip">POST …/messages（对话）</text>
+  <rect x="775" y="186" width="150" height="32" rx="6" fill="#fff" stroke="#a5b4fc"/>
+  <text x="850" y="206" text-anchor="middle" class="chip">…/report（导出）</text>
+
+  <!-- arrows client<->api -->
+  <line x1="530" y1="124" x2="530" y2="156" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- Left: detection engine -->
+  <rect x="120" y="282" width="300" height="86" rx="10" fill="#ecfdf5" stroke="#059669"/>
+  <text x="270" y="306" text-anchor="middle" class="ttl">VLM 识别（确定步骤）</text>
+  <text x="270" y="326" text-anchor="middle" class="sub">容错解析「整图结论 + 隐患列表」</text>
+  <text x="270" y="344" text-anchor="middle" class="sub">名→id 映射 · 非法输出抛 DetectionError</text>
+
+  <!-- local vLLM external -->
+  <rect x="120" y="404" width="180" height="56" rx="10" fill="#fff7ed" stroke="#ea580c"/>
+  <text x="210" y="426" text-anchor="middle" class="ttl">本地 vLLM</text>
+  <text x="210" y="444" text-anchor="middle" class="sub">微调视觉模型 · OpenAI 兼容</text>
+
+  <line x1="435" y1="218" x2="300" y2="282" class="edge" marker-end="url(#arrow)"/>
+  <text x="300" y="262" text-anchor="middle" class="edgelbl">上传即触发</text>
+  <line x1="240" y1="368" x2="210" y2="404" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- Right: orchestrator -->
+  <rect x="560" y="282" width="380" height="86" rx="10" fill="#eff6ff" stroke="#2563eb"/>
+  <text x="750" y="306" text-anchor="middle" class="ttl">Orchestrator · 手写工具循环</text>
+  <text x="750" y="326" text-anchor="middle" class="sub">AGENT_MODEL（OpenAI 兼容）</text>
+  <text x="750" y="344" text-anchor="middle" class="sub">解析 tool_calls → 分发 → 回灌，≤ MAX_TOOL_ITERATIONS</text>
+
+  <line x1="655" y1="218" x2="750" y2="282" class="edge" marker-end="url(#arrow)"/>
+  <text x="715" y="262" text-anchor="middle" class="edgelbl">确认 / 问答轮</text>
+
+  <!-- tools strip -->
+  <rect x="540" y="392" width="420" height="120" rx="10" fill="#f1f5f9" stroke="#64748b"/>
+  <text x="555" y="410" class="ttl">工具集（6）</text>
+  <rect x="552" y="420" width="125" height="34" rx="6" fill="#fff" stroke="#cbd5e1"/>
+  <text x="614" y="441" text-anchor="middle" class="chip">query_kg</text>
+  <rect x="685" y="420" width="125" height="34" rx="6" fill="#fff" stroke="#cbd5e1"/>
+  <text x="747" y="441" text-anchor="middle" class="chip">search_standards</text>
+  <rect x="818" y="420" width="128" height="34" rx="6" fill="#fff" stroke="#cbd5e1"/>
+  <text x="882" y="441" text-anchor="middle" class="chip">get_session_hazards</text>
+  <rect x="552" y="462" width="125" height="34" rx="6" fill="#fff" stroke="#cbd5e1"/>
+  <text x="614" y="483" text-anchor="middle" class="chip">confirm_hazards</text>
+  <rect x="685" y="462" width="125" height="34" rx="6" fill="#fff" stroke="#cbd5e1"/>
+  <text x="747" y="483" text-anchor="middle" class="chip">submit_correction</text>
+  <rect x="818" y="462" width="128" height="34" rx="6" fill="#fff" stroke="#cbd5e1"/>
+  <text x="882" y="483" text-anchor="middle" class="chip">export_report</text>
+
+  <line x1="750" y1="368" x2="750" y2="392" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- resources row -->
+  <rect x="60" y="600" width="200" height="74" rx="10" fill="#fdf4ff" stroke="#a21caf"/>
+  <text x="160" y="630" text-anchor="middle" class="ttl">KG Store</text>
+  <text x="160" y="650" text-anchor="middle" class="sub">对象/隐患/规则块 · 整改派生</text>
+
+  <rect x="280" y="600" width="210" height="74" rx="10" fill="#fdf4ff" stroke="#a21caf"/>
+  <text x="385" y="630" text-anchor="middle" class="ttl">标准向量 RAG</text>
+  <text x="385" y="650" text-anchor="middle" class="sub">chroma · JGJ 标准原文检索</text>
+
+  <rect x="510" y="600" width="160" height="74" rx="10" fill="#f0fdfa" stroke="#0d9488"/>
+  <text x="590" y="630" text-anchor="middle" class="ttl">SQLite</text>
+  <text x="590" y="650" text-anchor="middle" class="sub">会话/消息/隐患/纠错</text>
+
+  <rect x="690" y="600" width="200" height="74" rx="10" fill="#fffbeb" stroke="#d97706"/>
+  <text x="790" y="628" text-anchor="middle" class="ttl">流水线 Intake 队列</text>
+  <text x="790" y="648" text-anchor="middle" class="sub">图片 + VLM草稿 + 纠错备注</text>
+  <text x="790" y="664" text-anchor="middle" class="note">解耦：只写，不跑、不写母库</text>
+
+  <!-- annotation pipeline external -->
+  <rect x="690" y="708" width="200" height="60" rx="10" fill="#fff7ed" stroke="#ea580c"/>
+  <text x="790" y="732" text-anchor="middle" class="ttl">annotation_pipeline</text>
+  <text x="790" y="750" text-anchor="middle" class="sub">人工复核 → accepted → 母库（数据团队）</text>
+
+  <!-- tools -> resources edges -->
+  <line x1="614" y1="454" x2="200" y2="600" class="edge" marker-end="url(#arrow)"/>
+  <line x1="747" y1="454" x2="400" y2="600" class="edge" marker-end="url(#arrow)"/>
+  <line x1="640" y1="496" x2="600" y2="600" class="edge" marker-end="url(#arrow)"/>
+  <line x1="730" y1="496" x2="780" y2="600" class="edge" marker-end="url(#arrow)"/>
+  <text x="800" y="556" text-anchor="middle" class="edgelbl">submit_correction → 入队</text>
+  <line x1="790" y1="674" x2="790" y2="708" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- detector -> sqlite (persist) -->
+  <line x1="300" y1="368" x2="540" y2="612" class="edge" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="430" y="500" text-anchor="middle" class="edgelbl">持久化隐患（含 uncertainty/missing_evidence）</text>
+
+  <!-- legend -->
+  <text x="60" y="724" class="note">实线＝调用/数据流　虚线＝持久化　识别不在工具集内（是确定步骤）</text>
+</svg>

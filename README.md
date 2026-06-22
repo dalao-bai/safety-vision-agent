@@ -62,6 +62,60 @@ VLM 单次输出示例（一个隐患对象）：
 
 采用**方案 C：识别确定化 + 问答工具循环**。
 
+![系统架构图](docs/architecture.svg)
+
+<details>
+<summary>Mermaid 源码（可编辑，GitHub 直接渲染成图）</summary>
+
+```mermaid
+flowchart TB
+    C["用户 / 前端<br/>上传图片 · 多轮对话"]
+    subgraph API["FastAPI 后端"]
+      R1["POST /sessions"]:::route
+      R2["POST …/images（识别）"]:::route
+      R3["POST …/messages（对话）"]:::route
+      R4["…/report（导出）"]:::route
+    end
+    DET["VLM 识别（确定步骤）<br/>容错解析 · 名→id 映射"]:::engine
+    VLLM["本地 vLLM<br/>微调视觉模型 · OpenAI 兼容"]:::ext
+    ORCH["Orchestrator · 手写工具循环<br/>AGENT_MODEL · ≤ MAX_TOOL_ITERATIONS"]:::engine
+    subgraph TOOLS["工具集（6）"]
+      T1[query_kg]
+      T2[search_standards]
+      T3[get_session_hazards]
+      T4[confirm_hazards]
+      T5[submit_correction]
+      T6[export_report]
+    end
+    KG["KG Store<br/>对象/隐患/规则块"]:::res
+    RAG["标准向量 RAG（chroma）"]:::res
+    DB["SQLite<br/>会话/隐患/纠错"]:::res
+    INTAKE["流水线 Intake 队列<br/>解耦：只写，不跑、不写母库"]:::queue
+    PIPE["annotation_pipeline<br/>人工复核 → 母库"]:::ext
+
+    C --> API
+    R2 -->|上传即触发| DET --> VLLM
+    DET -.持久化隐患.-> DB
+    R3 -->|确认/问答轮| ORCH --> TOOLS
+    T1 --> KG
+    T2 --> RAG
+    T3 --> DB
+    T4 --> DB
+    T5 -->|入队| INTAKE --> PIPE
+    T6 --> DB
+
+    classDef route fill:#fff,stroke:#a5b4fc;
+    classDef engine fill:#eff6ff,stroke:#2563eb;
+    classDef res fill:#fdf4ff,stroke:#a21caf;
+    classDef queue fill:#fffbeb,stroke:#d97706;
+    classDef ext fill:#fff7ed,stroke:#ea580c;
+```
+
+</details>
+
+<details>
+<summary>ASCII 版（终端友好）</summary>
+
 ```
                      ┌──────────────────────────────────────────────┐
    上传图片 ───────► │  POST /sessions/{id}/images                    │
@@ -83,6 +137,8 @@ VLM 单次输出示例（一个隐患对象）：
                     │ Store  │ │ RAG(chroma)│ 持久化 │ │ intake 队列 │
                     └────────┘ └──────────┘ └────────┘ └────────────┘
 ```
+
+</details>
 
 **两条核心原则：**
 
