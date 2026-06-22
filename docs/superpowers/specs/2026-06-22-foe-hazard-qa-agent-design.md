@@ -33,6 +33,16 @@
 - **问答是工具循环**:AGENT_MODEL 持小工具集(KG 查询 / 标准检索 / 会话隐患召回 / 提交纠错 / 导出报告),在 `MAX_TOOL_ITERATIONS` 内循环作答。
 - 识别可靠且自动 → bbox/状态/reasoning 可被后续多轮稳定引用;问答保持灵活;工具集小、易测。
 
+### 技术栈(纯 Python,不引入 agent 框架)
+
+- **FastAPI**:后端与路由。
+- **openai SDK**:统一调本地 vLLM(VLM)与 AGENT_MODEL(均为 OpenAI 兼容接口),tool-calling 用原生能力。
+- **chromadb**:向量库(RAG),embeddings 走 OpenAI 兼容 `/embeddings`。
+- **SQLite**(`sqlite3` 或 SQLModel):会话持久化。
+- **pydantic-settings**:`.env` 配置。
+- **工具循环手写**:「调模型 → 解析 tool_calls → 分发 → 回灌结果」自实现,受 `MAX_TOOL_ITERATIONS` 约束;不用 LangChain/LangGraph,保证控制流可控、可测、易调。
+- 若未来需要多 agent 编排或频繁切换供应商,再评估 LangGraph;当前范围不需要。
+
 ## 3. 模块结构(按单一职责拆分)
 
 ```
