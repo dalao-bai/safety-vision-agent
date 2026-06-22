@@ -1,0 +1,97 @@
+import json
+
+import pytest
+
+from app.vlm.detector import Detector, DetectionError
+
+
+class FakeChatCompletions:
+    def __init__(self, content: str):
+        self._content = content
+
+    def create(self, **kwargs):
+        class _Msg:
+            content = self._content
+        class _Choice:
+            message = _Msg()
+        class _Resp:
+            choices = [_Choice()]
+        return _Resp()
+
+
+class FakeClient:
+    def __init__(self, content: str):
+        self.chat = type("C", (), {"completions": FakeChatCompletions(content)})()
+
+
+def _detector_with(content: str, kg_path) -> Detector:
+    from app.kg.store import KGStore
+    return Detector(client=FakeClient(content), model="vlm-x", kg=KGStore.load(str(kg_path)))
+
+
+def test_parse_wrapped_hazards(sample_vlm_response, tiny_png, kg_path):
+    det = _detector_with(json.dumps(sample_vlm_response, ensure_ascii=False), kg_path)
+    result = det.detect(str(tiny_png))
+    assert result.scene == "four_openings_edges" or result.scene == "四口五临边"
+    assert len(result.hazards) == 1
+    h = result.hazards[0]
+    assert h.object_id == "foundation_pit_edge_protection"
+    assert h.bbox == [0, 278, 999, 999]
+    assert h.hazard_type_id == "missing_protection"
+    assert h.status == "confirmed_hazard"
+
+
+def test_parse_bare_list(sample_vlm_hazard, tiny_png, kg_path):
+    det = _detector_with(json.dumps([sample_vlm_hazard], ensure_ascii=False), kg_path)
+    result = det.detect(str(tiny_png))
+    assert len(result.hazards) == 1
+
+
+def test_fenced_json_is_parsed(sample_vlm_response, tiny_png, kg_path):
+    content = "```json\n" + json.dumps(sample_vlm_response, ensure_ascii=False) + "\n```"
+    det = _detector_with(content, kg_path)
+    assert len(det.detect(str(tiny_png)).hazards) == 1
+
+
+def test_invalid_json_raises(tiny_png, kg_path):
+    det = _detector_with("not json at all", kg_path)
+    with pytest.raises(DetectionError):
+        det.detect(str(tiny_png))
+
+
+def test_fenced_json_with_trailing_prose(sample_vlm_response, tiny_png, kg_path):
+    body = json.dumps(sample_vlm_response, ensure_ascii=False)
+    content = "```json\n" + body + "\n```\n这张图显示了一个施工现场。"
+    det = _detector_with(content, kg_path)
+    assert len(det.detect(str(tiny_png)).hazards) == 1
+
+
+def test_fenced_json_crlf(sample_vlm_response, tiny_png, kg_path):
+    body = json.dumps(sample_vlm_response, ensure_ascii=False)
+    content = "```json\r\n" + body + "\r\n```"
+    det = _detector_with(content, kg_path)
+    assert len(det.detect(str(tiny_png)).hazards) == 1
+
+
+def test_objects_key_shape(sample_vlm_hazard, tiny_png, kg_path):
+    payload = {"scene": "四口五临边", "objects": [sample_vlm_hazard]}
+    det = _detector_with(json.dumps(payload, ensure_ascii=False), kg_path)
+    assert det.detect(str(tiny_png)).hazards[0].object_id == "foundation_pit_edge_protection"
+
+
+def test_non_dict_hazard_element_raises(tiny_png, kg_path):
+    det = _detector_with(json.dumps({"hazards": ["oops", 42]}, ensure_ascii=False), kg_path)
+    with pytest.raises(DetectionError):
+        det.detect(str(tiny_png))
+
+
+def test_uncertain_missing_evidence_is_parsed(tiny_png, kg_path):
+    import json
+    hazard = {"related_object": "基坑临边防护", "object_bbox": [1, 2, 3, 4],
+              "status": "uncertain", "hazard_type_id": None, "hazard_type": None,
+              "visual_evidence": "", "rule_basis": "", "evidence_sufficiency": "insufficient",
+              "uncertainty_reason": "protective_component_not_visible",
+              "missing_evidence": "栏杆是否连续被遮挡", "reasoning_chain": []}
+    det = _detector_with(json.dumps({"scene": "四口五临边", "hazards": [hazard]}, ensure_ascii=False), kg_path)
+    h = det.detect(str(tiny_png)).hazards[0]
+    assert h.missing_evidence == "栏杆是否连续被遮挡"

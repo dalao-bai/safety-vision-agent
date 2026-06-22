@@ -624,7 +624,9 @@ git commit -m "feat(persistence): SQLite store for sessions/messages/images/haza
 - Create: `backend/app/kg/store.py`
 - Test: `backend/tests/test_kg_store.py`
 
-- [ ] **Step 1: 写失败测试(用真实 KG 资产)**
+> **数据事实(实现期发现):** KG 的 `objects[i].qualified_conditions` 仅 7/9 对象有值,`foundation_pit_edge_protection` 与 `balcony_edge_protection` 为空;其规则在同目录 `four_openings_edges_rule_blocks.json`(list,65 条,按 `object_id`+`hazard_type_id` 组织)。因此 `KGStore` 同时加载 rule_blocks,`remediation_for` 诚实返回 qualified_conditions(可能为空),另以 `rule_blocks_for` 暴露规则块供 `query_kg` 兜底。
+
+- [ ] **Step 1: 写失败测试(用真实 KG + rule_blocks 资产)**
 
 `backend/tests/test_kg_store.py`:
 ```python
@@ -650,19 +652,38 @@ def test_get_hazard_type(kg_path):
     assert ht is not None and ht.get("name") == "防护缺失"
 
 
-def test_remediation_for(kg_path):
+def test_remediation_for_populated_object(kg_path):
     kg = KGStore.load(str(kg_path))
-    items = kg.remediation_for("foundation_pit_edge_protection")
-    # remediation items are the qualified_conditions' condition texts + sources
+    items = kg.remediation_for("stair_opening_protection")  # has qualified_conditions
     assert len(items) >= 1
     assert "condition" in items[0] and "source" in items[0]
 
 
-def test_unknown_ids_return_none(kg_path):
+def test_remediation_empty_when_no_qualified_conditions(kg_path):
+    kg = KGStore.load(str(kg_path))
+    assert kg.remediation_for("foundation_pit_edge_protection") == []
+
+
+def test_rule_blocks_for_object(kg_path):
+    kg = KGStore.load(str(kg_path))
+    blocks = kg.rule_blocks_for("foundation_pit_edge_protection")
+    assert len(blocks) >= 1
+    assert "rule_text" in blocks[0] and "source" in blocks[0]
+
+
+def test_rule_blocks_filtered_by_hazard_type(kg_path):
+    kg = KGStore.load(str(kg_path))
+    blocks = kg.rule_blocks_for("foundation_pit_edge_protection", hazard_type_id="missing_protection")
+    assert len(blocks) >= 1
+    assert all(b["hazard_type_id"] == "missing_protection" for b in blocks)
+
+
+def test_unknown_ids_return_none_or_empty(kg_path):
     kg = KGStore.load(str(kg_path))
     assert kg.get_object("nope") is None
     assert kg.get_hazard_type("nope") is None
     assert kg.remediation_for("nope") == []
+    assert kg.rule_blocks_for("nope") == []
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -682,16 +703,30 @@ from typing import Any
 
 
 class KGStore:
-    def __init__(self, data: dict[str, Any]):
+    def __init__(self, data: dict[str, Any], rule_blocks: list[dict[str, Any]] | None = None):
         self._data = data
         self._objects = {o["id"]: o for o in data.get("objects", [])}
         self._name_to_id = {o["name"]: o["id"] for o in data.get("objects", [])}
-        self._hazard_types = dict(data.get("hazard_types", {}))
+        self._hazard_types = {
+            k: (v if isinstance(v, dict) else {"name": v})
+            for k, v in data.get("hazard_types", {}).items()
+        }
         self.scene = data.get("scene", {})
+        self._rule_blocks_by_object: dict[str, list[dict[str, Any]]] = {}
+        for rb in (rule_blocks or []):
+            self._rule_blocks_by_object.setdefault(rb.get("object_id", ""), []).append(rb)
 
     @classmethod
-    def load(cls, path: str) -> "KGStore":
-        return cls(json.loads(Path(path).read_text(encoding="utf-8")))
+    def load(cls, path: str, rule_blocks_path: str | None = None) -> "KGStore":
+        kg_path = Path(path)
+        data = json.loads(kg_path.read_text(encoding="utf-8"))
+        rb_path = Path(rule_blocks_path) if rule_blocks_path else kg_path.parent / "four_openings_edges_rule_blocks.json"
+        rule_blocks: list[dict[str, Any]] = []
+        if rb_path.exists():
+            loaded = json.loads(rb_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, list):
+                rule_blocks = loaded
+        return cls(data, rule_blocks)
 
     def get_object(self, object_id: str) -> dict[str, Any] | None:
         return self._objects.get(object_id)
@@ -708,27 +743,30 @@ class KGStore:
             return []
         items: list[dict[str, str]] = []
         for qc in obj.get("qualified_conditions", []):
-            items.append({
-                "id": qc.get("id", ""),
-                "condition": qc.get("condition", ""),
-                "source": qc.get("source", ""),
-            })
+            items.append({"id": qc.get("id", ""), "condition": qc.get("condition", ""),
+                          "source": qc.get("source", "")})
         return items
-```
 
-> 注:`get_hazard_type` 返回的 dict 结构以 KG 实际为准。Task 1 探查显示 `hazard_types[id]` 是含 `name` 的对象;若实际为字符串,这里需包成 `{"name": value}`。实现时按真实 KG 兼容两种:在 `__init__` 里 `self._hazard_types = {k: (v if isinstance(v, dict) else {"name": v}) for k, v in data.get("hazard_types", {}).items()}`。
+    def rule_blocks_for(self, object_id: str, hazard_type_id: str | None = None) -> list[dict[str, Any]]:
+        blocks = self._rule_blocks_by_object.get(object_id, [])
+        if hazard_type_id:
+            blocks = [b for b in blocks if b.get("hazard_type_id") == hazard_type_id]
+        return [{"rule_id": b.get("rule_id", ""), "hazard_type_id": b.get("hazard_type_id"),
+                 "hazard_type": b.get("hazard_type"), "rule_text": b.get("rule_text", ""),
+                 "visual_cues": b.get("visual_cues", []), "source": b.get("source", "")} for b in blocks]
+```
 
 - [ ] **Step 4: 运行确认通过**
 
 Run: `cd backend && python -m pytest tests/test_kg_store.py -v`
-Expected: PASS（5 passed)
+Expected: PASS（8 passed)
 
 - [ ] **Step 5: 提交**
 
 ```bash
 cd /mnt/e/VLM-微调/agent
 git add backend/app/kg backend/tests/test_kg_store.py
-git commit -m "feat(kg): in-memory KG store with object/hazard lookup and remediation derivation"
+git commit -m "feat(kg): KG store with object/hazard lookup, qualified-condition remediation, and rule_blocks"
 ```
 
 ---
@@ -1455,9 +1493,13 @@ def test_schemas_cover_five_tools():
 
 def test_query_kg(tmp_path, kg_path):
     ctx, _ = _ctx(tmp_path, kg_path)
-    out = dispatch_tool("query_kg", {"object_id": "foundation_pit_edge_protection"}, ctx)
+    out = dispatch_tool("query_kg", {"object_id": "foundation_pit_edge_protection",
+                                     "hazard_type_id": "missing_protection"}, ctx)
     assert out["name"] == "基坑临边防护"
-    assert len(out["remediation"]) >= 1
+    # foundation_pit has empty qualified_conditions, but rule_blocks ground remediation
+    assert out["remediation"] == []
+    assert len(out["rule_blocks"]) >= 1
+    assert out["rule_blocks"][0]["hazard_type_id"] == "missing_protection"
 
 
 def test_search_standards(tmp_path, kg_path):
@@ -1551,6 +1593,7 @@ def _hazard_brief(h) -> dict:
 def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     if name == "query_kg":
         oid = args.get("object_id")
+        hid = args.get("hazard_type_id")
         out: dict[str, Any] = {}
         if oid:
             obj = ctx.kg.get_object(oid) or {}
@@ -1558,8 +1601,10 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str
                    "definition": obj.get("definition", ""),
                    "inspection_scope": obj.get("inspection_scope", []),
                    "qualified_conditions": obj.get("qualified_conditions", []),
-                   "remediation": ctx.kg.remediation_for(oid)}
-        hid = args.get("hazard_type_id")
+                   "remediation": ctx.kg.remediation_for(oid),
+                   # rule_blocks ground remediation/standard answers even when
+                   # qualified_conditions is empty (e.g. foundation_pit, balcony)
+                   "rule_blocks": ctx.kg.rule_blocks_for(oid, hid)}
         if hid:
             out["hazard_type"] = ctx.kg.get_hazard_type(hid) or {}
         return out

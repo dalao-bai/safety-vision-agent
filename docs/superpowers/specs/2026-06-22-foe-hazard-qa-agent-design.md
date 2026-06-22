@@ -84,11 +84,11 @@ backend/app/
 4. 助手回复:整图结果摘要(逐隐患:对象 / 状态 / 隐患类型 / bbox / 证据)+ 主动一句「以上识别结果是否正确?」;该图进入待确认态。
 
 ### B. 确认轮(用户在对话中回复)
-- 「正确」→ 隐患置 `confirmed`,转入问答。
+- 「正确」→ 助手调 `confirm_hazards(image_id)`:该图隐患置 `confirmed`、图状态置 `confirmed`,转入问答(只有 `confirmed` 隐患才会进入导出报告)。
 - 「不正确」→ 助手追问「哪里不正确?」。
 - 用户自由描述错误 → 助手调 `submit_correction`:把 `{image_id, VLM结果快照, 用户纠错备注, 时间}` 落库,并经 `correction.intake.deposit` **沉入流水线待处理队列**;该图置 `corrected_submitted`,回复「已记录并入队」。
 
-确认/纠错的对话由 orchestrator 的 per-image「待确认」状态驱动:当某图待确认时,系统提示词要求模型先解决确认;模型从用户消息判定对/不对,不对且已说明缘由时调用 `submit_correction`。
+确认/纠错的对话由 orchestrator 的 per-image「待确认」状态驱动:当某图待确认时,系统提示词要求模型先解决确认;模型从用户消息判定对/不对,对则调用 `confirm_hazards`,不对且已说明缘由时调用 `submit_correction`。所有按 `image_id` 操作的工具都校验该图属于当前会话(跨会话拒绝)。
 
 ### C. 问答轮(标准溯源 / 整改)
 - 工具循环作答,引用 KG 与标准原文。整改建议由 `query_kg` 返回的 `qualified_conditions` 反推可操作整改项。
@@ -97,20 +97,22 @@ backend/app/
 
 | 工具 | 作用 |
 |---|---|
-| `query_kg(object_id?, hazard_type_id?)` | 返回 KG 实体:定义、inspection_scope、`qualified_conditions`(整改依据)、隐患类型、source 引用 |
+| `query_kg(object_id?, hazard_type_id?)` | 返回 KG 实体:定义、inspection_scope、`qualified_conditions`(整改依据)、`rule_blocks`(规则块兜底)、隐患类型、source 引用 |
 | `search_standards(query, top_k)` | 向量检索标准 OCR 原文片段,返回条文 + 文件/章节出处 |
 | `get_session_hazards(image_id?)` | 召回本会话已识别隐患(多轮记忆) |
+| `confirm_hazards(image_id)` | 用户确认识别正确时将该图隐患置 `confirmed`(报告导出前置条件) |
 | `submit_correction(image_id, note)` | 记录纠错 + 沉入流水线待处理队列 |
-| `export_report(scope?)` | 由会话内确认隐患生成 Markdown 报告并返回下载链接 |
+| `export_report(scope?)` | 由会话内已确认隐患生成 Markdown 报告并返回下载链接 |
 
 ## 6. annotation_pipeline 对接契约(解耦,只写不跑)
 
 - 写入独立待处理目录 `runtime/pipeline_intake/`,布局对齐流水线 `--mock-from-json` 输入:
-  - 复制图片到 intake image-dir;
-  - 写配套 `<sample>.json`:VLM 草稿对象,字段按 `annotation_pipeline/normalize.py` 期望的草稿结构(object_id、status、hazard_type_id、bbox、visual_evidence 等);
-  - 用户纠错备注写入 `review_decisions` 草稿的「审核备注」字段,并打 `needs_rerun` 标记。
-- Agent **不**调 `runner`、**不**写母库 `annotation_db/`;数据团队事后用 `--serve-review` 浏览器工具复核入库。
-- 配套 JSON 的精确字段映射在实现期对照 `normalize.py` / `runner.py` / `api_client.py` 校验后定稿。
+  - `images/<stem>.<ext>`:复制原图(stem 冲突时自动加 `_N` 后缀,避免覆盖);
+  - `images/<stem>.json`:配套 VLM 草稿,字段按 `annotation_pipeline/normalize.py` 期望的草稿结构(object_id、object_name、status、hazard_type_id、hazard_type、bbox、visual_evidence、evidence_sufficiency、uncertainty_reason、missing_evidence),并附 `agent_source`、`agent_correction_note`(用户纠错备注随草稿一并传递);
+  - `corrections/<stem>.correction.json`:人读纠错上下文(`note` + `original_vlm` 完整快照,含 reasoning_chain、rule_basis)。
+- **`needs_rerun`/复核结论不由 agent 预写**:这是流水线复核阶段的内部机制。Agent 只投递原料;数据团队事后跑 `--mock-from-json` 生成草标 + 框图 + `review_decisions`,在 `--serve-review` 复核时按需标记 `needs_rerun` 并据 correction 侧车上下文判断。
+- Agent **不**调 `runner`、**不**写母库 `annotation_db/`。
+- 配套 JSON 的字段映射已在实现期由 `test_intake.py` 用真实 `annotation_pipeline.normalize_draft` 硬校验。
 
 ## 7. RAG 检索层
 

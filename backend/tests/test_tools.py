@@ -1,0 +1,138 @@
+from app.agent.tools import TOOL_SCHEMAS, dispatch_tool, ToolContext
+from app.kg.store import KGStore
+from app.persistence.db import Database
+
+
+class FakeStandards:
+    def search(self, query, top_k=3):
+        return [{"text": "施工楼梯口安装防护栏杆", "source": "JGJ80.md", "heading": "## 4.1.2"}]
+
+
+def _ctx(tmp_path, kg_path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "four_openings_edges")
+    db.add_hazards(img_id, [{"object_id": "foundation_pit_edge_protection",
+                             "status": "confirmed_hazard", "hazard_type_id": "missing_protection",
+                             "bbox": [0, 278, 999, 999], "reasoning_chain": [],
+                             "visual_evidence": "e", "rule_basis": "r", "evidence_sufficiency": "sufficient"}])
+    ctx = ToolContext(db=db, kg=KGStore.load(str(kg_path)), standards=FakeStandards(),
+                      intake=None, report_dir=str(tmp_path / "rep"), session_id=sid)
+    return ctx, img_id
+
+
+def test_schemas_cover_five_tools():
+    names = {t["function"]["name"] for t in TOOL_SCHEMAS}
+    assert names == {"query_kg", "search_standards", "get_session_hazards",
+                     "submit_correction", "export_report", "confirm_hazards"}
+
+
+def test_query_kg(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    out = dispatch_tool("query_kg", {"object_id": "foundation_pit_edge_protection",
+                                     "hazard_type_id": "missing_protection"}, ctx)
+    assert out["name"] == "基坑临边防护"
+    # foundation_pit has empty qualified_conditions, but rule_blocks ground remediation
+    assert out["remediation"] == []
+    assert len(out["rule_blocks"]) >= 1
+    assert out["rule_blocks"][0]["hazard_type_id"] == "missing_protection"
+
+
+def test_query_kg_populated_remediation(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    out = dispatch_tool("query_kg", {"object_id": "stair_opening_protection"}, ctx)
+    assert len(out["remediation"]) >= 1
+
+
+def test_search_standards(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    out = dispatch_tool("search_standards", {"query": "楼梯口", "top_k": 1}, ctx)
+    assert out["hits"][0]["source"] == "JGJ80.md"
+
+
+def test_get_session_hazards(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    out = dispatch_tool("get_session_hazards", {}, ctx)
+    assert out["hazards"][0]["object_id"] == "foundation_pit_edge_protection"
+
+
+def test_export_report(tmp_path, kg_path):
+    ctx, img_id = _ctx(tmp_path, kg_path)
+    ctx.db.mark_hazards_confirmed(img_id)
+    out = dispatch_tool("export_report", {}, ctx)
+    assert out["report_path"].endswith(".md")
+
+
+def test_unknown_tool_raises(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    import pytest
+    with pytest.raises(ValueError):
+        dispatch_tool("nope", {}, ctx)
+
+
+class FakeIntake:
+    def __init__(self):
+        self.last = None
+
+    def deposit(self, image_path, result, note):
+        self.last = (image_path, result, note)
+        return "runtime/pipeline_intake"
+
+
+def test_submit_correction_threads_uncertainty(tmp_path, kg_path):
+    from app.kg.store import KGStore
+    from app.persistence.db import Database
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "four_openings_edges")
+    db.add_hazards(img_id, [{"object_id": "foundation_pit_edge_protection", "status": "uncertain",
+                             "hazard_type_id": None, "bbox": [1, 2, 3, 4], "reasoning_chain": [],
+                             "visual_evidence": "", "rule_basis": "", "evidence_sufficiency": "insufficient",
+                             "uncertainty_reason": "protective_component_not_visible",
+                             "missing_evidence": "栏杆是否连续被遮挡"}])
+    intake = FakeIntake()
+    ctx = ToolContext(db=db, kg=KGStore.load(str(kg_path)), standards=FakeStandards(),
+                      intake=intake, report_dir=str(tmp_path), session_id=sid)
+    out = dispatch_tool("submit_correction", {"image_id": img_id, "note": "不对"}, ctx)
+    assert out["ok"] is True
+    _, result, note = intake.last
+    assert note == "不对"
+    assert result.hazards[0].uncertainty_reason == "protective_component_not_visible"
+    assert result.hazards[0].missing_evidence == "栏杆是否连续被遮挡"
+    assert db.get_image(img_id).status == "corrected_submitted"
+
+
+def test_submit_correction_empty_hazards_guard(tmp_path, kg_path):
+    from app.kg.store import KGStore
+    from app.persistence.db import Database
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "four_openings_edges")  # no hazards
+    ctx = ToolContext(db=db, kg=KGStore.load(str(kg_path)), standards=FakeStandards(),
+                      intake=FakeIntake(), report_dir=str(tmp_path), session_id=sid)
+    out = dispatch_tool("submit_correction", {"image_id": img_id, "note": "x"}, ctx)
+    assert out["ok"] is False
+
+
+def test_confirm_hazards(tmp_path, kg_path):
+    ctx, img_id = _ctx(tmp_path, kg_path)
+    out = dispatch_tool("confirm_hazards", {"image_id": img_id}, ctx)
+    assert out["ok"] is True
+    assert ctx.db.get_hazards(img_id)[0].confirmed is True
+    assert ctx.db.get_image(img_id).status == "confirmed"
+
+
+def test_confirm_hazards_wrong_session(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    other = ctx.db.create_session()
+    other_img = ctx.db.add_image(other, "p2.png", "four_openings_edges")
+    out = dispatch_tool("confirm_hazards", {"image_id": other_img}, ctx)
+    assert out["ok"] is False
+
+
+def test_submit_correction_wrong_session(tmp_path, kg_path):
+    ctx, _ = _ctx(tmp_path, kg_path)
+    other = ctx.db.create_session()
+    other_img = ctx.db.add_image(other, "p2.png", "four_openings_edges")
+    out = dispatch_tool("submit_correction", {"image_id": other_img, "note": "x"}, ctx)
+    assert out["ok"] is False
