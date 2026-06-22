@@ -23,7 +23,7 @@ def _hazard_to_pipeline_object(h: Hazard) -> dict:
         "visual_evidence": h.visual_evidence,
         "evidence_sufficiency": h.evidence_sufficiency,
         "uncertainty_reason": h.uncertainty_reason,
-        "missing_evidence": None,
+        "missing_evidence": h.missing_evidence,
     }
 
 
@@ -39,6 +39,13 @@ class IntakeWriter:
         corrections.mkdir(parents=True, exist_ok=True)
 
         stem = src.stem
+        base_stem = stem
+        counter = 0
+        while ((images / f"{stem}.json").exists()
+               or (images / f"{stem}{src.suffix.lower()}").exists()
+               or (corrections / f"{stem}.correction.json").exists()):
+            counter += 1
+            stem = f"{base_stem}_{counter}"
         dest_img = images / f"{stem}{src.suffix.lower()}"
         shutil.copy2(src, dest_img)
 

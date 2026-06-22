@@ -32,6 +32,7 @@ class Hazard:
     evidence_sufficiency: str
     uncertainty_reason: str | None
     reasoning_chain: list[dict[str, Any]] = field(default_factory=list)
+    missing_evidence: str | None = None
 
 
 @dataclass
@@ -119,6 +120,7 @@ class Detector:
             evidence_sufficiency=raw.get("evidence_sufficiency", ""),
             uncertainty_reason=raw.get("uncertainty_reason"),
             reasoning_chain=raw.get("reasoning_chain", []) or [],
+            missing_evidence=raw.get("missing_evidence"),
         )
 
 

@@ -50,3 +50,24 @@ def test_paired_json_accepted_by_pipeline_normalize(tiny_png, tmp_path: Path, re
     draft = normalize_draft(parsed, img, 1000, 1000, rules, "mock", True)
     assert draft["objects"][0]["object_id"] == "foundation_pit_edge_protection"
     assert draft["objects"][0]["bbox"] == [0, 278, 999, 999]
+
+
+def test_paired_json_includes_scene(tiny_png, tmp_path):
+    w = IntakeWriter(intake_dir=str(tmp_path / "intake"))
+    w.deposit(image_path=str(tiny_png), result=_result(), note="x")
+    import json as _json
+    paired = next((tmp_path / "intake" / "images").glob("*.json"))
+    assert _json.loads(paired.read_text(encoding="utf-8"))["scene"] == "four_openings_edges"
+
+
+def test_double_deposit_preserves_both(tiny_png, tmp_path):
+    w = IntakeWriter(intake_dir=str(tmp_path / "intake"))
+    w.deposit(image_path=str(tiny_png), result=_result(), note="第一次纠错")
+    w.deposit(image_path=str(tiny_png), result=_result(), note="第二次纠错")
+    import json as _json
+    corr = sorted((tmp_path / "intake" / "corrections").glob("*.correction.json"))
+    assert len(corr) == 2
+    notes = {_json.loads(p.read_text(encoding="utf-8"))["note"] for p in corr}
+    assert notes == {"第一次纠错", "第二次纠错"}
+    # paired drafts also both present
+    assert len(list((tmp_path / "intake" / "images").glob("*.json"))) == 2

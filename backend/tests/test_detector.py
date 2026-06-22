@@ -83,3 +83,15 @@ def test_non_dict_hazard_element_raises(tiny_png, kg_path):
     det = _detector_with(json.dumps({"hazards": ["oops", 42]}, ensure_ascii=False), kg_path)
     with pytest.raises(DetectionError):
         det.detect(str(tiny_png))
+
+
+def test_uncertain_missing_evidence_is_parsed(tiny_png, kg_path):
+    import json
+    hazard = {"related_object": "基坑临边防护", "object_bbox": [1, 2, 3, 4],
+              "status": "uncertain", "hazard_type_id": None, "hazard_type": None,
+              "visual_evidence": "", "rule_basis": "", "evidence_sufficiency": "insufficient",
+              "uncertainty_reason": "protective_component_not_visible",
+              "missing_evidence": "栏杆是否连续被遮挡", "reasoning_chain": []}
+    det = _detector_with(json.dumps({"scene": "四口五临边", "hazards": [hazard]}, ensure_ascii=False), kg_path)
+    h = det.detect(str(tiny_png)).hazards[0]
+    assert h.missing_evidence == "栏杆是否连续被遮挡"
