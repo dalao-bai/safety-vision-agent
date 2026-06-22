@@ -57,3 +57,29 @@ def test_invalid_json_raises(tiny_png, kg_path):
     det = _detector_with("not json at all", kg_path)
     with pytest.raises(DetectionError):
         det.detect(str(tiny_png))
+
+
+def test_fenced_json_with_trailing_prose(sample_vlm_response, tiny_png, kg_path):
+    body = json.dumps(sample_vlm_response, ensure_ascii=False)
+    content = "```json\n" + body + "\n```\n这张图显示了一个施工现场。"
+    det = _detector_with(content, kg_path)
+    assert len(det.detect(str(tiny_png)).hazards) == 1
+
+
+def test_fenced_json_crlf(sample_vlm_response, tiny_png, kg_path):
+    body = json.dumps(sample_vlm_response, ensure_ascii=False)
+    content = "```json\r\n" + body + "\r\n```"
+    det = _detector_with(content, kg_path)
+    assert len(det.detect(str(tiny_png)).hazards) == 1
+
+
+def test_objects_key_shape(sample_vlm_hazard, tiny_png, kg_path):
+    payload = {"scene": "四口五临边", "objects": [sample_vlm_hazard]}
+    det = _detector_with(json.dumps(payload, ensure_ascii=False), kg_path)
+    assert det.detect(str(tiny_png)).hazards[0].object_id == "foundation_pit_edge_protection"
+
+
+def test_non_dict_hazard_element_raises(tiny_png, kg_path):
+    det = _detector_with(json.dumps({"hazards": ["oops", 42]}, ensure_ascii=False), kg_path)
+    with pytest.raises(DetectionError):
+        det.detect(str(tiny_png))

@@ -48,10 +48,10 @@ def _image_data_url(path: str) -> str:
 
 def _strip_fences(text: str) -> str:
     text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\n", "", text)
-        text = re.sub(r"\n```$", "", text)
-    return text.strip()
+    m = re.match(r"^```[a-zA-Z]*\r?\n(.*?)(?:\r?\n```.*)?$", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    return text
 
 
 def _extract_hazards(parsed: Any) -> tuple[str, list[dict]]:
@@ -97,6 +97,8 @@ class Detector:
         return resp.choices[0].message.content or ""
 
     def _to_hazard(self, raw: dict) -> Hazard:
+        if not isinstance(raw, dict):
+            raise DetectionError(f"hazard element is not a dict: {type(raw).__name__}")
         object_id = raw.get("object_id") or ""
         object_name = raw.get("object_name") or raw.get("related_object") or ""
         if not object_id and object_name:
