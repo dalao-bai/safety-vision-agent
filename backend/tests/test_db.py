@@ -57,3 +57,23 @@ def test_confirmed_hazards_for_session(tmp_path: Path):
     db.mark_hazards_confirmed(img_id)
     rows = db.get_confirmed_hazards(sid)
     assert len(rows) == 1 and rows[0].object_id == "o"
+
+
+def test_get_image_missing_raises(tmp_path: Path):
+    import pytest
+    db = Database(str(tmp_path / "t.db"))
+    with pytest.raises(KeyError):
+        db.get_image(999)
+
+
+def test_reasoning_chain_none_normalizes_to_list(tmp_path: Path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "s")
+    db.add_hazards(img_id, [{"object_id": "o", "status": "confirmed_hazard",
+                             "hazard_type_id": "missing_protection", "bbox": None,
+                             "reasoning_chain": None, "visual_evidence": "", "rule_basis": "",
+                             "evidence_sufficiency": "sufficient"}])
+    h = db.get_hazards(img_id)[0]
+    assert h.reasoning_chain == []
+    assert h.bbox is None

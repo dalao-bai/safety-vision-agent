@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -62,102 +63,120 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
         self._conn.commit()
+        self._lock = threading.Lock()
 
     # sessions / messages
     def create_session(self) -> int:
-        cur = self._conn.execute("INSERT INTO sessions(created_at) VALUES(?)", (_now(),))
-        self._conn.commit()
-        return int(cur.lastrowid)
+        with self._lock:
+            cur = self._conn.execute("INSERT INTO sessions(created_at) VALUES(?)", (_now(),))
+            self._conn.commit()
+            return int(cur.lastrowid)
 
     def session_exists(self, sid: int) -> bool:
-        row = self._conn.execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone()
-        return row is not None
+        with self._lock:
+            row = self._conn.execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone()
+            return row is not None
 
     def add_message(self, sid: int, role: str, content: str) -> int:
-        cur = self._conn.execute(
-            "INSERT INTO messages(session_id, role, content, created_at) VALUES(?,?,?,?)",
-            (sid, role, content, _now()),
-        )
-        self._conn.commit()
-        return int(cur.lastrowid)
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO messages(session_id, role, content, created_at) VALUES(?,?,?,?)",
+                (sid, role, content, _now()),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
 
     def get_messages(self, sid: int) -> list[Message]:
-        rows = self._conn.execute(
-            "SELECT * FROM messages WHERE session_id=? ORDER BY id", (sid,)
-        ).fetchall()
-        return [Message(**dict(r)) for r in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM messages WHERE session_id=? ORDER BY id", (sid,)
+            ).fetchall()
+            return [Message(**dict(r)) for r in rows]
 
     # images / hazards
     def add_image(self, sid: int, path: str, scene: str) -> int:
-        cur = self._conn.execute(
-            "INSERT INTO images(session_id, path, scene, status, created_at) VALUES(?,?,?,?,?)",
-            (sid, path, scene, "awaiting_confirmation", _now()),
-        )
-        self._conn.commit()
-        return int(cur.lastrowid)
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO images(session_id, path, scene, status, created_at) VALUES(?,?,?,?,?)",
+                (sid, path, scene, "awaiting_confirmation", _now()),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
 
     def get_image(self, img_id: int) -> ImageRecord:
-        r = self._conn.execute("SELECT * FROM images WHERE id=?", (img_id,)).fetchone()
-        return ImageRecord(**dict(r))
+        with self._lock:
+            r = self._conn.execute("SELECT * FROM images WHERE id=?", (img_id,)).fetchone()
+            if r is None:
+                raise KeyError(f"image {img_id} not found")
+            return ImageRecord(**dict(r))
 
     def set_image_status(self, img_id: int, status: str) -> None:
-        self._conn.execute("UPDATE images SET status=? WHERE id=?", (status, img_id))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("UPDATE images SET status=? WHERE id=?", (status, img_id))
+            self._conn.commit()
 
     def add_hazards(self, img_id: int, hazards: list[dict[str, Any]]) -> None:
-        for h in hazards:
-            self._conn.execute(
-                """INSERT INTO hazards(image_id, object_id, status, hazard_type_id, bbox,
-                    reasoning_chain, visual_evidence, rule_basis, evidence_sufficiency, confirmed)
-                   VALUES(?,?,?,?,?,?,?,?,?,0)""",
-                (
-                    img_id, h.get("object_id", ""), h.get("status", ""), h.get("hazard_type_id"),
-                    json.dumps(h.get("bbox"), ensure_ascii=False),
-                    json.dumps(h.get("reasoning_chain", []), ensure_ascii=False),
-                    h.get("visual_evidence", ""), h.get("rule_basis", ""),
-                    h.get("evidence_sufficiency", ""),
-                ),
-            )
-        self._conn.commit()
+        with self._lock:
+            for h in hazards:
+                self._conn.execute(
+                    """INSERT INTO hazards(image_id, object_id, status, hazard_type_id, bbox,
+                        reasoning_chain, visual_evidence, rule_basis, evidence_sufficiency, confirmed)
+                       VALUES(?,?,?,?,?,?,?,?,?,0)""",
+                    (
+                        img_id, h.get("object_id", ""), h.get("status", ""), h.get("hazard_type_id"),
+                        json.dumps(h.get("bbox"), ensure_ascii=False),
+                        json.dumps(h.get("reasoning_chain") or [], ensure_ascii=False),
+                        h.get("visual_evidence", ""), h.get("rule_basis", ""),
+                        h.get("evidence_sufficiency", ""),
+                    ),
+                )
+            self._conn.commit()
 
     def _row_to_hazard(self, r: sqlite3.Row) -> Hazard:
         d = dict(r)
         d["bbox"] = json.loads(d["bbox"]) if d["bbox"] else None
-        d["reasoning_chain"] = json.loads(d["reasoning_chain"]) if d["reasoning_chain"] else []
+        val = json.loads(d["reasoning_chain"]) if d["reasoning_chain"] else []
+        d["reasoning_chain"] = val if isinstance(val, list) else []
         d["confirmed"] = bool(d["confirmed"])
         return Hazard(**d)
 
     def get_hazards(self, img_id: int) -> list[Hazard]:
-        rows = self._conn.execute("SELECT * FROM hazards WHERE image_id=? ORDER BY id", (img_id,)).fetchall()
-        return [self._row_to_hazard(r) for r in rows]
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM hazards WHERE image_id=? ORDER BY id", (img_id,)).fetchall()
+            return [self._row_to_hazard(r) for r in rows]
 
     def mark_hazards_confirmed(self, img_id: int) -> None:
-        self._conn.execute("UPDATE hazards SET confirmed=1 WHERE image_id=?", (img_id,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("UPDATE hazards SET confirmed=1 WHERE image_id=?", (img_id,))
+            self._conn.commit()
 
     def get_confirmed_hazards(self, sid: int) -> list[Hazard]:
-        rows = self._conn.execute(
-            """SELECT h.* FROM hazards h JOIN images i ON h.image_id=i.id
-               WHERE i.session_id=? AND h.confirmed=1 ORDER BY h.id""", (sid,)
-        ).fetchall()
-        return [self._row_to_hazard(r) for r in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT h.* FROM hazards h JOIN images i ON h.image_id=i.id
+                   WHERE i.session_id=? AND h.confirmed=1 ORDER BY h.id""", (sid,)
+            ).fetchall()
+            return [self._row_to_hazard(r) for r in rows]
 
     def get_session_hazards(self, sid: int) -> list[Hazard]:
-        rows = self._conn.execute(
-            """SELECT h.* FROM hazards h JOIN images i ON h.image_id=i.id
-               WHERE i.session_id=? ORDER BY h.id""", (sid,)
-        ).fetchall()
-        return [self._row_to_hazard(r) for r in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT h.* FROM hazards h JOIN images i ON h.image_id=i.id
+                   WHERE i.session_id=? ORDER BY h.id""", (sid,)
+            ).fetchall()
+            return [self._row_to_hazard(r) for r in rows]
 
     # corrections
     def add_correction(self, img_id: int, note: str, intake_path: str) -> int:
-        cur = self._conn.execute(
-            "INSERT INTO corrections(image_id, note, intake_path, created_at) VALUES(?,?,?,?)",
-            (img_id, note, intake_path, _now()),
-        )
-        self._conn.commit()
-        return int(cur.lastrowid)
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO corrections(image_id, note, intake_path, created_at) VALUES(?,?,?,?)",
+                (img_id, note, intake_path, _now()),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
 
     def get_corrections(self, img_id: int) -> list[Correction]:
-        rows = self._conn.execute("SELECT * FROM corrections WHERE image_id=? ORDER BY id", (img_id,)).fetchall()
-        return [Correction(**dict(r)) for r in rows]
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM corrections WHERE image_id=? ORDER BY id", (img_id,)).fetchall()
+            return [Correction(**dict(r)) for r in rows]
