@@ -34,3 +34,22 @@ def test_empty_report(tmp_path: Path):
                                  object_name_for=lambda o: o, hazard_name_for=lambda h: h,
                                  remediation_for=lambda o: [])
     assert "未发现已确认隐患" in Path(path).read_text(encoding="utf-8")
+
+
+def test_newlines_in_text_do_not_inject_headings(tmp_path):
+    from pathlib import Path
+    from app.persistence.models import Hazard
+    from app.reports.builder import build_markdown_report
+    hz = [Hazard(id=1, image_id=1, object_id="o", status="confirmed_hazard",
+                 hazard_type_id="missing_protection", bbox=[1, 2, 3, 4], reasoning_chain=[],
+                 visual_evidence="证据第一行\n## 伪标题\n- 伪列表", rule_basis="r",
+                 evidence_sufficiency="sufficient", confirmed=True)]
+    path = build_markdown_report(session_id=3, hazards=hz, report_dir=str(tmp_path),
+                                 object_name_for=lambda o: "对象\n## 注入", hazard_name_for=lambda h: "防护缺失",
+                                 remediation_for=lambda o: [])
+    text = Path(path).read_text(encoding="utf-8")
+    # the only level-2 headings are the real per-hazard ones (start with "## 1.")
+    h2 = [ln for ln in text.splitlines() if ln.startswith("## ")]
+    assert all(ln.startswith("## 1.") for ln in h2)
+    assert "伪标题" in text  # content preserved, just not as a heading
+    assert text.endswith("\n")
