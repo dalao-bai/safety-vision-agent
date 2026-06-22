@@ -32,12 +32,14 @@ def get_intake() -> IntakeWriter:
     return IntakeWriter(get_settings().pipeline_intake_dir)
 
 
+@lru_cache
 def get_agent_client():
     from openai import OpenAI
     s = get_settings()
     return OpenAI(base_url=s.openai_api_base_url, api_key=s.openai_api_key)
 
 
+@lru_cache
 def get_detector():
     from app.vlm.detector import build_detector
     return build_detector(get_settings(), get_kg())

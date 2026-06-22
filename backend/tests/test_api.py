@@ -15,26 +15,13 @@ def client(tmp_path, kg_path, tiny_png, monkeypatch):
     monkeypatch.setenv("REPORT_DIR", str(tmp_path / "reports"))
     monkeypatch.setenv("PIPELINE_INTAKE_DIR", str(tmp_path / "intake"))
 
-    import importlib
     import app.config as config
-    importlib.reload(config)
-
-    # deps caches singletons via lru_cache against the OLD settings; reload it too
     import app.api.deps as deps
-    importlib.reload(deps)
-
-    # Reload route modules so their Depends() capture the freshly-reloaded deps functions.
-    import app.api.sessions as _sessions_mod
-    import app.api.images as _images_mod
-    import app.api.messages as _messages_mod
-    import app.api.reports as _reports_mod
-    importlib.reload(_sessions_mod)
-    importlib.reload(_images_mod)
-    importlib.reload(_messages_mod)
-    importlib.reload(_reports_mod)
-
-    import app.main as _main_mod
-    importlib.reload(_main_mod)
+    # clear cached settings + singletons so this test binds to the temp paths above
+    config.get_settings.cache_clear()
+    for fn in (deps.get_db, deps.get_kg, deps.get_standards, deps.get_intake,
+               deps.get_agent_client, deps.get_detector):
+        fn.cache_clear()
 
     from app.main import create_app
     from app.vlm.detector import DetectionResult, Hazard
@@ -98,3 +85,37 @@ def test_reject_bad_image_type(client):
     sid = c.post("/sessions").json()["session_id"]
     r = c.post(f"/sessions/{sid}/images", files={"file": ("x.txt", b"hello", "text/plain")})
     assert r.status_code == 400
+
+
+def test_reject_oversize_image(tmp_path, kg_path, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv("OPENAI_API_BASE_URL", "http://x/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setenv("AGENT_MODEL", "agent-x")
+    monkeypatch.setenv("VLM_MODEL", "vlm-x")
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "agent.db"))
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("MAX_IMAGE_BYTES", "10")
+    import app.config as config
+    import app.api.deps as deps
+    config.get_settings.cache_clear()
+    for fn in (deps.get_db, deps.get_kg, deps.get_standards, deps.get_intake,
+               deps.get_agent_client, deps.get_detector):
+        fn.cache_clear()
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+    app = create_app()
+    # override all external deps so no real model or openai client is needed
+    from app.vlm.detector import DetectionResult
+    app.dependency_overrides[deps.get_detector] = lambda: type("D", (), {"detect": lambda self, p: DetectionResult(scene="s", hazards=[])})()
+    app.dependency_overrides[deps.get_agent_client] = lambda: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kw: SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=None))])))
+    )
+    app.dependency_overrides[deps.get_standards] = lambda: SimpleNamespace(
+        search=lambda q, top_k=3: []
+    )
+    c = TestClient(app)
+    sid = c.post("/sessions").json()["session_id"]
+    r = c.post(f"/sessions/{sid}/images", files={"file": ("big.png", b"x" * 50, "image/png")})
+    assert r.status_code == 413

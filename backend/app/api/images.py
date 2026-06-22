@@ -27,14 +27,15 @@ def upload_image(sid: int, file: UploadFile = File(...),
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in _ALLOWED:
         raise HTTPException(400, f"unsupported image type: {suffix}")
-    data = file.file.read()
-    if len(data) > settings.max_image_bytes:
+    max_bytes = settings.max_image_bytes
+    data = file.file.read(max_bytes + 1)
+    if len(data) > max_bytes:
         raise HTTPException(413, "image too large")
 
     upload_dir = Path(settings.upload_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
     dest = (upload_dir / f"{sid}_{abs(hash(data)) % 10**10}{suffix}").resolve()
-    if not str(dest).startswith(str(upload_dir.resolve())):
+    if not dest.is_relative_to(upload_dir.resolve()):
         raise HTTPException(400, "invalid path")
     dest.write_bytes(data)
 
