@@ -102,8 +102,14 @@ backend/app/
 - Agent **不**调 `runner`、**不**写母库 `annotation_db/`;数据团队事后用 `--serve-review` 浏览器工具复核入库。
 - 配套 JSON 的精确字段映射在实现期对照 `normalize.py` / `runner.py` / `api_client.py` 校验后定稿。
 
-## 7. 检索层
+## 7. RAG 检索层
 
+本系统采用**双重 grounding**,两者互补:
+
+- **向量 RAG(`search_standards`)**:对标准 OCR 文档做语义检索 + 增强生成,即教科书式 RAG——检索相关条文片段,连同出处塞进上下文供 AGENT_MODEL 引用作答。负责提供**标准原文佐证**。
+- **结构化 grounding(`query_kg`)**:按 `object_id` / `hazard_type_id` 直接查 KG 实体,精确、无幻觉(structured retrieval / GraphRAG 的轻量形态,非向量检索)。负责提供**确定的对象-隐患-规则映射与整改条件**。
+
+向量 RAG 实现:
 - 由 `知识图谱主文件/标准规范文件/.../ocr/*.md` 及结构化表格切块建 chroma 索引(`EMBEDDING_MODEL` / `CHROMA_DIR`),首启或独立脚本构建。
 - `search` 返回片段 + 出处(文件名 + 章节标题)。
 - 向量库不可用时降级为 KG-only 作答并明确说明。
