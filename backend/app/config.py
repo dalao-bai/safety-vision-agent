@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     pipeline_intake_dir: str = "runtime/pipeline_intake"
     max_image_bytes: int = 10 * 1024 * 1024
     max_tool_iterations: int = 5
+    max_vlm_workers: int = 4
 
     @model_validator(mode="after")
     def _fill_vlm(self) -> "Settings":
