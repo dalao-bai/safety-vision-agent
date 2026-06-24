@@ -111,6 +111,152 @@ def test_handle_image_persists_and_presents(tmp_path, kg_path):
     assert any("是否正确" in m.content for m in db.get_messages(sid) if m.role == "assistant")
 
 
+def _sample_result():
+    from app.vlm.detector import DetectionResult, Hazard
+    return DetectionResult(scene="four_openings_edges", hazards=[
+        Hazard(object_id="foundation_pit_edge_protection", object_name="基坑临边防护",
+               status="confirmed_hazard", hazard_type_id="missing_protection", hazard_type="防护缺失",
+               bbox=[1, 2, 3, 4], visual_evidence="ev", rule_basis="", evidence_sufficiency="sufficient",
+               uncertainty_reason=None, reasoning_chain=[], missing_evidence=None)])
+
+
+def test_completed_image_detection_summary_compressed(tmp_path, kg_path):
+    orch, db, _ = _orch(tmp_path, kg_path, [])
+    sid = db.create_session()
+    img_id = orch.handle_image(sid, "p.png", _sample_result())
+    # confirm the image → terminal state
+    db.mark_hazards_confirmed(img_id)
+    db.set_image_status(img_id, "confirmed")
+
+    msgs = orch._build_messages(sid)
+    asst_contents = [m["content"] for m in msgs if m["role"] == "assistant"]
+    assert len(asst_contents) == 1
+    # compressed to one-liner, not the full detection dump
+    assert "是否正确" not in asst_contents[0]
+    assert "已确认" in asst_contents[0]
+    assert str(img_id) in asst_contents[0]
+    # system ctx also compressed
+    sys_content = msgs[0]["content"]
+    assert "待确认图片" not in sys_content
+    assert "[已处理]" in sys_content
+
+
+def test_pending_image_detection_summary_kept(tmp_path, kg_path):
+    orch, db, _ = _orch(tmp_path, kg_path, [])
+    sid = db.create_session()
+    orch.handle_image(sid, "p.png", _sample_result())
+
+    msgs = orch._build_messages(sid)
+    asst_contents = [m["content"] for m in msgs if m["role"] == "assistant"]
+    assert "是否正确" in asst_contents[0]
+    assert "待确认图片" in msgs[0]["content"]
+
+
+def test_mixed_images_compress_only_completed(tmp_path, kg_path):
+    orch, db, _ = _orch(tmp_path, kg_path, [])
+    sid = db.create_session()
+    img1 = orch.handle_image(sid, "p1.png", _sample_result())
+    img2 = orch.handle_image(sid, "p2.png", _sample_result())
+    db.mark_hazards_confirmed(img1)
+    db.set_image_status(img1, "confirmed")
+    # img2 remains awaiting_confirmation
+
+    msgs = orch._build_messages(sid)
+    asst_contents = [m["content"] for m in msgs if m["role"] == "assistant"]
+    assert len(asst_contents) == 2
+    assert "已确认" in asst_contents[0]        # img1 compressed
+    assert "是否正确" in asst_contents[1]       # img2 kept intact
+    sys_content = msgs[0]["content"]
+    assert "[已处理]" in sys_content            # img1 ctx compressed
+    assert "待确认图片" in sys_content           # img2 ctx kept
+
+
+def test_guard_unknown_tool_via_orchestrator(tmp_path, kg_path):
+    # Model emits a hallucinated tool name; guard rejects it and feeds error
+    # back as tool result; model then produces a text reply.
+    script = [
+        ("", [("ghost_tool", {"x": 1})]),
+        ("抱歉，该工具不存在。", []),
+    ]
+    orch, db, _ = _orch(tmp_path, kg_path, script)
+    sid = db.create_session()
+    reply = orch.handle_message(sid, "随便问点啥")
+    assert "抱歉" in reply   # loop completed normally
+
+
+def test_guard_duplicate_tool_via_orchestrator(tmp_path, kg_path):
+    # Model sends the same tool call twice; second is blocked by guard; model
+    # receives error and produces a text answer without hitting max_iterations.
+    script = [
+        ("", [("search_standards", {"query": "基坑"})]),
+        ("", [("search_standards", {"query": "基坑"})]),   # duplicate → blocked
+        ("已查到相关标准。", []),
+    ]
+    orch, db, _ = _orch(tmp_path, kg_path, script)
+    sid = db.create_session()
+    reply = orch.handle_message(sid, "基坑防护标准?")
+    assert "已查到" in reply
+
+
+def test_handle_batch_images_success(tmp_path, kg_path):
+    orch, db, _ = _orch(tmp_path, kg_path, [])
+    sid = db.create_session()
+    succeeded = [("p1.png", _sample_result()), ("p2.png", _sample_result())]
+
+    result = orch.handle_batch_images(sid, succeeded, failed_files=[])
+
+    assert result["succeeded"] == 2
+    assert result["failed"] == 0
+    assert result["total"] == 2
+    assert result["summary"]["confirmed_hazard"] == 2
+    assert "已完成 2 张图识别" in result["assistant_message"]
+
+    msgs = db.get_messages(sid)
+    assert [m.role for m in msgs] == ["assistant", "system"]
+    assert msgs[1].content.startswith("[context] 批量上传 image_ids=")
+
+
+def test_handle_batch_images_partial_failure(tmp_path, kg_path):
+    orch, db, _ = _orch(tmp_path, kg_path, [])
+    sid = db.create_session()
+
+    result = orch.handle_batch_images(
+        sid,
+        succeeded=[("p1.png", _sample_result())],
+        failed_files=[{"filename": "p2.png", "reason": "vlm_error"}],
+    )
+
+    assert result["succeeded"] == 1
+    assert result["failed"] == 1
+    assert result["total"] == 2
+    msgs = db.get_messages(sid)
+    assert any(m.content.startswith("[context] 批量上传 image_ids=") for m in msgs)
+    assert "失败" in result["assistant_message"]
+
+
+def test_handle_batch_images_all_failed(tmp_path, kg_path):
+    orch, db, _ = _orch(tmp_path, kg_path, [])
+    sid = db.create_session()
+
+    result = orch.handle_batch_images(
+        sid,
+        succeeded=[],
+        failed_files=[
+            {"filename": "p1.png", "reason": "vlm_error"},
+            {"filename": "p2.png", "reason": "vlm_error"},
+        ],
+    )
+
+    assert result["succeeded"] == 0
+    assert result["failed"] == 2
+    assert result["total"] == 2
+    msgs = db.get_messages(sid)
+    assert len(msgs) == 1
+    assert msgs[0].role == "assistant"
+    assert "失败" in msgs[0].content
+    assert not any(m.content.startswith("[context] 批量上传 image_ids=") for m in msgs)
+
+
 def test_build_messages_single_leading_system(tmp_path, kg_path):
     from app.vlm.detector import DetectionResult, Hazard
     orch, db, _ = _orch(tmp_path, kg_path, [])
