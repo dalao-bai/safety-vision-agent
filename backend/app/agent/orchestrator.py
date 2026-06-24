@@ -9,6 +9,7 @@ from app.persistence.db import Database
 from app.vlm.detector import DetectionResult
 
 _CTX_PREFIX = "[context] 待确认图片 image_id="
+_BATCH_CTX_PREFIX = "[context] 批量上传 image_ids="
 _STATUS_LABEL = {"confirmed": "已确认", "corrected_submitted": "已纠错入队"}
 
 
@@ -152,6 +153,8 @@ class Orchestrator:
         # Detection summary = assistant message immediately before a _CTX_PREFIX system message.
         detect_msg: dict[int, int] = {}   # message.id → image_id
         completed: set[int] = set()
+        batch_asst_to_ids: dict[int, list[int]] = {}
+        batch_ctx_compressed: set[int] = set()
         prev_asst = None
         for m in raw:
             if m.role == "assistant":
@@ -165,6 +168,21 @@ class Orchestrator:
                             completed.add(img_id)
                     except KeyError:
                         pass
+                prev_asst = None
+            elif m.role == "system" and m.content.startswith(_BATCH_CTX_PREFIX):
+                ids_str = m.content[len(_BATCH_CTX_PREFIX):]
+                batch_ids = [int(x) for x in ids_str.split(",") if x.strip().isdigit()]
+                if prev_asst is not None and batch_ids:
+                    try:
+                        all_terminal = all(
+                            self._db.get_image(i).status in ("confirmed", "corrected_submitted")
+                            for i in batch_ids
+                        )
+                    except KeyError:
+                        all_terminal = False
+                    if all_terminal:
+                        batch_asst_to_ids[prev_asst.id] = batch_ids
+                        batch_ctx_compressed.add(m.id)
                 prev_asst = None
             else:
                 prev_asst = None
@@ -181,6 +199,11 @@ class Orchestrator:
                         system_parts.append(_compress_system_ctx(img_id, img.status))
                     else:
                         system_parts.append(m.content)
+                elif m.content.startswith(_BATCH_CTX_PREFIX):
+                    if m.id in batch_ctx_compressed:
+                        system_parts.append("[已处理] 批量上传 全部已处理")
+                    else:
+                        system_parts.append(m.content)
                 else:
                     system_parts.append(m.content)
             elif m.role in ("user", "assistant"):
@@ -190,6 +213,10 @@ class Orchestrator:
                     hz = self._db.get_hazards(img_id)
                     convo.append({"role": "assistant",
                                   "content": _compress_assistant_msg(img_id, img.status, hz)})
+                elif m.id in batch_asst_to_ids:
+                    n = len(batch_asst_to_ids[m.id])
+                    convo.append({"role": "assistant",
+                                  "content": f"[批量已处理] 共{n}张图片，全部已确认/已纠错。"})
                 else:
                     convo.append({"role": m.role, "content": m.content})
 

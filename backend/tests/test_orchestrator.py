@@ -257,6 +257,33 @@ def test_handle_batch_images_all_failed(tmp_path, kg_path):
     assert not any(m.content.startswith("[context] 批量上传 image_ids=") for m in msgs)
 
 
+def test_build_messages_batch_compression(tmp_path, kg_path):
+    orch, db, _ = _orch(tmp_path, kg_path, [])
+    sid = db.create_session()
+    orch.handle_batch_images(sid, [("p1.png", _sample_result()), ("p2.png", _sample_result())],
+                             failed_files=[])
+    ctx_msg = next(m for m in db.get_messages(sid)
+                   if m.content.startswith("[context] 批量上传 image_ids="))
+    img_ids = [int(x) for x in ctx_msg.content.split("=")[1].split(",")]
+
+    # before confirmation: full summary visible
+    built = orch._build_messages(sid)
+    assert any("已完成" in m["content"] for m in built if m["role"] == "assistant")
+
+    for img_id in img_ids:
+        db.mark_hazards_confirmed(img_id)
+        db.set_image_status(img_id, "confirmed")
+
+    # after confirmation: summary compressed
+    built2 = orch._build_messages(sid)
+    asst = [m["content"] for m in built2 if m["role"] == "assistant"]
+    assert any("[批量已处理]" in c for c in asst)
+    assert not any("已完成" in c for c in asst)
+    sys_content = built2[0]["content"]
+    assert "[已处理] 批量上传" in sys_content
+    assert "[context] 批量上传 image_ids=" not in sys_content
+
+
 def test_build_messages_single_leading_system(tmp_path, kg_path):
     from app.vlm.detector import DetectionResult, Hazard
     orch, db, _ = _orch(tmp_path, kg_path, [])
