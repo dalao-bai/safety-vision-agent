@@ -72,7 +72,7 @@ def test_full_flow(client):
 
     r3 = c.post(f"/sessions/{sid}/report")
     assert r3.status_code == 200
-    assert r3.json()["report_path"].endswith(".md")
+    assert r3.json()["report_path"].endswith(".docx")
 
 
 def test_unknown_session_404(client):
@@ -85,6 +85,56 @@ def test_reject_bad_image_type(client):
     sid = c.post("/sessions").json()["session_id"]
     r = c.post(f"/sessions/{sid}/images", files={"file": ("x.txt", b"hello", "text/plain")})
     assert r.status_code == 400
+
+
+def test_batch_upload_success(client):
+    c, tiny_png = client
+    sid = c.post("/sessions").json()["session_id"]
+    png_bytes = tiny_png.read_bytes()
+
+    r = c.post(f"/sessions/{sid}/images/batch", files=[
+        ("files", ("a.png", png_bytes, "image/png")),
+        ("files", ("b.png", png_bytes, "image/png")),
+    ])
+    assert r.status_code == 200
+    body = r.json()
+    assert body["succeeded"] == 2
+    assert body["failed"] == 0
+    assert body["total"] == 2
+    assert "batch_id" in body
+    assert "已完成 2 张图识别" in body["assistant_message"]
+
+
+def test_batch_upload_invalid_type_skipped(client):
+    c, tiny_png = client
+    sid = c.post("/sessions").json()["session_id"]
+
+    r = c.post(f"/sessions/{sid}/images/batch", files=[
+        ("files", ("a.png", tiny_png.read_bytes(), "image/png")),
+        ("files", ("b.pdf", b"not-a-pdf", "application/pdf")),
+    ])
+    assert r.status_code == 200
+    body = r.json()
+    assert body["succeeded"] == 1
+    assert body["failed"] == 1
+    assert body["failed_files"][0]["reason"] == "unsupported_type"
+
+
+def test_batch_upload_all_invalid_returns_422(client):
+    c, _ = client
+    sid = c.post("/sessions").json()["session_id"]
+    r = c.post(f"/sessions/{sid}/images/batch", files=[
+        ("files", ("a.pdf", b"x", "application/pdf")),
+    ])
+    assert r.status_code == 422
+
+
+def test_batch_upload_unknown_session_404(client):
+    c, tiny_png = client
+    r = c.post("/sessions/9999/images/batch", files=[
+        ("files", ("a.png", tiny_png.read_bytes(), "image/png")),
+    ])
+    assert r.status_code == 404
 
 
 def test_reject_oversize_image(tmp_path, kg_path, monkeypatch):
