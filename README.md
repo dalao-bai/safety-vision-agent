@@ -15,14 +15,15 @@
 - [5. 知识资产](#5-知识资产)
 - [6. 工具集（Agent 能力）](#6-工具集agent-能力)
 - [7. 数据飞轮：人在回路纠错](#7-数据飞轮人在回路纠错)
-- [8. RAG 检索层](#8-rag-检索层)
-- [9. API 接口](#9-api-接口)
-- [10. 配置](#10-配置)
-- [11. 安装与运行](#11-安装与运行)
-- [12. 测试](#12-测试)
-- [13. 关键设计决策](#13-关键设计决策)
-- [14. 目录结构](#14-目录结构)
-- [15. 不在本轮范围](#15-不在本轮范围)
+- [8. 上下文管理](#8-上下文管理)
+- [9. RAG 检索层](#9-rag-检索层)
+- [10. API 接口](#10-api-接口)
+- [11. 配置](#11-配置)
+- [12. 安装与运行](#12-安装与运行)
+- [13. 测试](#13-测试)
+- [14. 关键设计决策](#14-关键设计决策)
+- [15. 目录结构](#15-目录结构)
+- [16. 不在本轮范围](#16-不在本轮范围)
 
 ---
 
@@ -60,7 +61,7 @@ VLM 单次输出示例（一个隐患对象）：
 
 ## 2. 系统架构
 
-采用**方案 C：识别确定化 + 问答工具循环**。
+采用**方案 ：识别确定化 + 问答工具循环**。
 
 ![系统架构图](docs/architecture.svg)
 
@@ -79,13 +80,15 @@ flowchart TB
     DET["VLM 识别（确定步骤）<br/>容错解析 · 名→id 映射"]:::engine
     VLLM["本地 vLLM<br/>微调视觉模型 · OpenAI 兼容"]:::ext
     ORCH["Orchestrator · 手写工具循环<br/>AGENT_MODEL · ≤ MAX_TOOL_ITERATIONS"]:::engine
-    subgraph TOOLS["工具集（6）"]
+    subgraph TOOLS["工具集（8）"]
       T1[query_kg]
       T2[search_standards]
       T3[get_session_hazards]
       T4[confirm_hazards]
       T5[submit_correction]
       T6[export_report]
+      T7[query_statistics]
+      T8[confirm_hazards_batch]
     end
     KG["KG Store<br/>对象/隐患/规则块"]:::res
     RAG["标准向量 RAG（chroma）"]:::res
@@ -118,17 +121,22 @@ flowchart TB
 
 ```
                      ┌──────────────────────────────────────────────┐
-   上传图片 ───────► │  POST /sessions/{id}/images                    │
+   上传（单张）─────► │  POST /sessions/{id}/images                    │
                      │  1) 校验+落盘 → 2) VLM 识别(确定步骤,非工具)  │
                      │  3) 持久化隐患 → 4) 主动确认问句               │
+                     ├──────────────────────────────────────────────┤
+   批量上传 ────────► │  POST /sessions/{id}/images/batch              │
+                     │  1) 逐文件校验 → 2) 线程池并发 VLM             │
+                     │  3) 批量持久化 → 4) 聚合摘要 + 批量上下文      │
                      └───────────────┬──────────────────────────────┘
                                      │
    多轮对话 ───────► ┌───────────────▼──────────────────────────────┐
    POST .../messages │  Orchestrator：手写工具循环(AGENT_MODEL)      │
                      │  ┌────────────────────────────────────────┐   │
-                     │  │ confirm_hazards  submit_correction      │   │
-                     │  │ query_kg(+rule_blocks)  search_standards│   │
-                     │  │ get_session_hazards     export_report   │   │
+                     │  │ confirm_hazards  confirm_hazards_batch  │   │
+                     │  │ submit_correction  query_kg             │   │
+                     │  │ search_standards  get_session_hazards   │   │
+                     │  │ export_report  query_statistics         │   │
                      │  └────────────────────────────────────────┘   │
                      └───┬──────────┬───────────┬──────────┬─────────┘
                          │          │           │          │
@@ -151,11 +159,17 @@ flowchart TB
 
 ## 3. 核心数据流
 
-### A. 上传识别轮 `POST /sessions/{id}/images`
+### A. 单张上传识别轮 `POST /sessions/{id}/images`
 1. 校验图片类型与大小（`MAX_IMAGE_BYTES`），按内容 sha1 命名落盘到 `UPLOAD_DIR`（带路径越界防护）。
 2. 调本地 vLLM 识别 → 解析为 `DetectionResult{scene, hazards[]}`。
 3. 持久化图片与隐患（状态 `awaiting_confirmation`），完整保留 `uncertainty_reason`/`missing_evidence` 等字段。
 4. 返回隐患列表 + 一句主动确认：「以上识别结果是否正确？」
+
+### A2. 批量上传识别轮 `POST /sessions/{id}/images/batch`
+1. 逐文件校验类型与大小；无效文件记入 `failed_files` 并跳过，全部无效则返回 `422`。
+2. 有效文件落盘后，`ThreadPoolExecutor`（`MAX_VLM_WORKERS` 个工作线程）**并发**调 VLM；单张失败仅追加 `failed_files`，不中断其余。
+3. 所有线程完成后统一写 DB：每张成功图 `add_image` + `add_hazards`，再写一条聚合 assistant 摘要消息和一条 `[context] 批量上传 image_ids=...` 系统上下文。全部失败时只写一条失败提示 assistant 消息，不写 system 上下文。
+4. 返回 `{batch_id(UUID,仅供日志关联), total, succeeded, failed, summary{confirmed_hazard,uncertain,safe}, failed_files, assistant_message}`。
 
 ### B. 确认轮（用户在对话中回复）
 - **「正确」** → Agent 调 `confirm_hazards(image_id)`，该图隐患置 `confirmed`（只有 confirmed 隐患才进入导出报告）。
@@ -176,11 +190,11 @@ flowchart TB
 | `app/kg/store.py` | 载入知识图谱 + 规则块 | `get_object` / `get_hazard_type` / `remediation_for` / `rule_blocks_for` |
 | `app/retrieval/standards.py` | 标准 OCR 向量库（RAG） | `build(roots)` 建索引；`search(query, top_k)` 返回片段+出处 |
 | `app/correction/intake.py` | 纠错样本写入流水线队列 | `deposit(image, result, note)`；只写文件、不跑流水线、不写母库 |
-| `app/reports/builder.py` | 生成 Markdown 报告 | 由会话内 `confirmed` 隐患生成；对插值文本做换行清洗 |
+| `app/reports/builder.py` | 生成 Word（.docx）报告 | 由会话内 `confirmed` 隐患生成；标题/段落/整改条目结构化排版 |
 | `app/persistence/db.py` | SQLite 持久化 | 线程锁保护；会话/消息/图片/隐患/纠错读写 |
-| `app/agent/tools.py` | 6 个工具的 schema 与分发 | 跨会话 `image_id` 鉴权（`_owns_image`） |
+| `app/agent/tools.py` | 8 个工具的 schema、分发与调用守卫 | 跨会话 `image_id` 鉴权（`_owns_image`）；`ToolGuard` 负责工具名校验、必填参数校验、同轮去重 |
 | `app/agent/prompts.py` | 系统提示词 + 识别展示模板 | 指导确认/纠错/作答流程 |
-| `app/agent/orchestrator.py` | 一轮调度 + 手写工具循环 | 识别确定化；`system` 上下文统一前置；循环上限兜底 |
+| `app/agent/orchestrator.py` | 一轮调度 + 手写工具循环 | 识别确定化；`system` 上下文统一前置；循环上限兜底；单张/批量已处理图的识别摘要自动压缩；每轮实例化 `ToolGuard` 拦截非法/重复调用 |
 | `app/api/*` | FastAPI 路由与依赖装配 | sessions / images / messages / reports |
 
 ---
@@ -206,12 +220,14 @@ VLM 的输出字段与 KG 实体**完全对齐**（`related_object`→object_id�
 
 | 工具 | 作用 |
 |---|---|
-| `query_kg(object_id?, hazard_type_id?)` | 查 KG 实体：定义、检查范围、`qualified_conditions`（整改依据）、`rule_blocks`（规则块兜底）、隐患类型、标准出处 |
+| `query_kg(object_id?, hazard_type_id?)` | 查 KG 实体：定义、检查范围、`qualified_conditions`（整改依据）、`rule_blocks`（规则块兜底，最多 5 条，超出部分由 `rule_blocks_total` 标注）、隐患类型、标准出处 |
 | `search_standards(query, top_k)` | 向量检索 JGJ 标准原文片段，返回条文 + 文件/章节出处 |
-| `get_session_hazards(image_id?)` | 召回本会话已识别隐患（多轮记忆，支持「刚才那张图」指代） |
-| `confirm_hazards(image_id)` | 用户确认正确时把该图隐患置 `confirmed`（报告导出前置条件） |
+| `get_session_hazards(image_id?, status_filter?, limit?)` | 召回本会话已识别隐患。传 `image_id` 时返回该图完整字段；传 `status_filter`（`confirmed_hazard`/`uncertain`/`safe`）时只返回该状态；不传时返回会话级摘要（长文本截断至 100 字，最多 `limit` 条，默认 20，附 `total`/`returned`） |
+| `confirm_hazards(image_id)` | 用户确认单张图正确时把该图隐患置 `confirmed`（报告导出前置条件） |
+| `confirm_hazards_batch(image_ids?, confirm_all?)` | 批量确认多张图片的识别结果。传 `image_ids=[...]` 确认指定图；传 `confirm_all=true` 确认本会话全部待确认图片（一次工具调用解决，不受 `MAX_TOOL_ITERATIONS` 累加限制） |
 | `submit_correction(image_id, note)` | 记录纠错 + 沉入流水线待处理队列 |
-| `export_report(scope?)` | 由会话内已确认隐患生成 Markdown 报告，返回下载路径 |
+| `export_report(scope?)` | 由会话内已确认隐患生成 Word（.docx）报告，返回下载路径 |
+| `query_statistics(date_from?, date_to?, hazard_type_id?, object_id?, confirmed_only?)` | 跨会话统计隐患数量与分类明细，支持按时间段 / 类型 / 对象过滤 |
 
 所有按 `image_id` 操作的工具都会校验该图属于当前会话，拒绝跨会话访问。
 
@@ -253,7 +269,35 @@ runtime/pipeline_intake/
 
 ---
 
-## 8. RAG 检索层
+## 8. 上下文管理
+
+会话对话历史全量存于 SQLite，每次对话前由 `_build_messages` 重建后发给模型。上下文管理分两层：
+
+### 跨轮：识别摘要压缩
+
+**单张上传**：图片上传时，识别摘要（含 `visual_evidence`、`rule_basis`、bbox 等，约 300 token/张）作为 assistant 消息写入历史。一旦该图进入终态（`confirmed` 或 `corrected_submitted`），`_build_messages` 构建时将该 assistant 摘要替换为一行占位（约 30 token），并把 system context 由 `[context] 待确认图片 image_id=X` 改为 `[已处理] image_id=X 状态:已确认`。
+
+**批量上传**：无论上传多少张，只写**两条消息**：一条聚合 assistant 摘要（约 150 token，与张数无关）+ 一条 `[context] 批量上传 image_ids=3,4,5,…` 系统上下文。对话历史增长量恒定，彻底避免批量识别后的上下文爆炸。一旦批次内所有图片均进入终态，`_build_messages` 将聚合摘要压缩为一行 `[批量已处理] 共N张图片，全部已确认/已纠错。`，系统上下文替换为 `[已处理] 批量上传 全部已处理`。
+
+**共同规则**：原始消息不删除，仅在构建时压缩；待确认的图/批次完整保留，Agent 仍能看到全部细节。
+
+### 单轮：工具结果截断
+
+工具调用消息不写 DB（只在当次 `handle_message` 内存中流转），但大型工具结果仍会在单次调用内累积。为此对返回值做了如下控制：
+
+| 工具 | 控制方式 |
+|---|---|
+| `get_session_hazards`（无 image_id） | `visual_evidence`/`rule_basis` 截断至 100 字并加 `"…"`，最多返回 `limit` 条（上限 50），附 `total`/`returned` 让模型感知被截 |
+| `get_session_hazards`（有 image_id） | 精确查询，字段完整返回，无截断 |
+| `query_kg` | `rule_blocks` 最多 5 条，`rule_text` 截断至 200 字，附 `rule_blocks_total` 标注实际总数 |
+| `search_standards` | 由调用方 `top_k` 参数控制（默认 3） |
+| `query_statistics` | `breakdown` 由 `top_n` 控制（默认 10） |
+
+所有截断均有显式标记（`"…"` 后缀或 `total` 字段），模型可据此判断是否需要缩小查询范围。
+
+---
+
+## 9. RAG 检索层
 
 系统采用**双重 grounding**，两者互补：
 
@@ -268,23 +312,24 @@ cd backend && python scripts/build_standards_index.py
 
 ---
 
-## 9. API 接口
+## 10. API 接口
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `POST` | `/sessions` | 创建会话 → `{session_id}` |
 | `GET`  | `/sessions/{id}` | 会话消息历史 |
-| `POST` | `/sessions/{id}/images` | 上传图片（multipart `file`）→ 触发识别，返回隐患列表 + 确认问句 |
+| `POST` | `/sessions/{id}/images` | 单张上传（multipart `file`）→ 触发识别，返回隐患列表 + 确认问句 |
+| `POST` | `/sessions/{id}/images/batch` | 批量上传（multipart `files[]`）→ 并发识别，返回 `{batch_id, total, succeeded, failed, summary, failed_files, assistant_message}` |
 | `POST` | `/sessions/{id}/messages` | 多轮问答 / 确认 / 纠错，body `{"text": "..."}` → `{reply}` |
-| `POST` | `/sessions/{id}/report` | 生成 Markdown 报告 → `{report_path}` |
+| `POST` | `/sessions/{id}/report` | 生成 Word（.docx）报告 → `{report_path}` |
 | `GET`  | `/sessions/{id}/report/download` | 下载报告文件 |
 | `GET`  | `/health` | 健康检查 |
 
-识别失败（VLM 输出非法）返回 `422`；图片类型不合法 `400`；超出大小上限 `413`；会话不存在 `404`。
+识别失败（VLM 输出非法）返回 `422`；图片类型不合法 `400`；超出大小上限 `413`；会话不存在 `404`。批量上传全部文件无效时返回 `422`；部分失败时仍返回 `200`，失败原因在 `failed_files` 中。
 
 ---
 
-## 10. 配置
+## 11. 配置
 
 `.env`（参考 `.env.example`）：
 
@@ -298,12 +343,13 @@ cd backend && python scripts/build_standards_index.py
 | `DATABASE_PATH` / `UPLOAD_DIR` / `REPORT_DIR` | 运行目录 |
 | `PIPELINE_INTAKE_DIR` | 纠错样本投递目录（默认 `runtime/pipeline_intake`） |
 | `MAX_IMAGE_BYTES` / `MAX_TOOL_ITERATIONS` | 上传上限 / 工具循环上限 |
+| `MAX_VLM_WORKERS` | 批量上传时 VLM 并发线程数（默认 4，按 GPU 显存和 vLLM batch size 调整） |
 
 VLM 用 vLLM 本地部署，默认暴露 OpenAI 兼容接口（`/v1/chat/completions`），因此 detector 复用 openai SDK，只是把 base URL 指向本地 vLLM。
 
 ---
 
-## 11. 安装与运行
+## 12. 安装与运行
 
 ```bash
 cd backend
@@ -320,10 +366,10 @@ uvicorn app.main:app --reload --port 8000
 
 ---
 
-## 12. 测试
+## 13. 测试
 
 ```bash
-cd backend && python -m pytest -q     # 67 passed
+cd backend && python -m pytest -q     # 104 passed
 ```
 
 测试策略：
@@ -336,7 +382,7 @@ cd backend && python -m pytest -q     # 67 passed
 
 ---
 
-## 13. 关键设计决策
+## 14. 关键设计决策
 
 | 决策 | 理由 |
 |---|---|
@@ -350,7 +396,7 @@ cd backend && python -m pytest -q     # 67 passed
 
 ---
 
-## 14. 目录结构
+## 15. 目录结构
 
 ```
 .
@@ -367,7 +413,7 @@ cd backend && python -m pytest -q     # 67 passed
 │   │   ├── reports/builder.py   报告生成
 │   │   └── persistence/         SQLite
 │   ├── scripts/build_standards_index.py
-│   ├── tests/                   67 个测试
+│   ├── tests/                   104 个测试
 │   └── README.md
 ├── annotation_pipeline/         数据标注流水线（草标→复核→入母库）
 ├── 知识图谱主文件/               KG + 规则块 + JGJ 标准资产
@@ -378,14 +424,16 @@ cd backend && python -m pytest -q     # 67 passed
 
 ---
 
-## 15. 不在本轮范围
+## 16. 不在本轮范围
 
 - 前端 UI（后续迭代；本轮为后端 API）。
 - 鉴权 / 多用户隔离（已留接口位，工具层已做同会话校验）。
 - 区域复查 / 裁剪复检。
 - Agent 直接运行流水线或写入母数据库。
-- docx / PDF 报告（本轮仅 Markdown）。
+- PDF 报告（当前输出 .docx，PDF 转换留待后续）。
 
 ---
 
-> 设计与实现细节见 `docs/superpowers/specs/2026-06-22-foe-hazard-qa-agent-design.md`（设计文档）与 `docs/superpowers/plans/2026-06-22-foe-hazard-qa-agent.md`（逐任务实现计划）。
+> 设计与实现细节：
+> - Agent 核心：`docs/superpowers/specs/2026-06-22-foe-hazard-qa-agent-design.md`（设计文档）、`docs/superpowers/plans/2026-06-22-foe-hazard-qa-agent.md`（实现计划）
+> - 批量上传：`docs/batch-upload-design.md`（设计文档）、`docs/superpowers/plans/2026-06-24-batch-upload.md`（实现计划）
