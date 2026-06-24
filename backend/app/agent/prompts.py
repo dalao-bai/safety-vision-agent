@@ -12,8 +12,15 @@ SYSTEM_PROMPT = """你是「四口五临边」建筑安全隐患问答助手。�
    - search_standards:在 JGJ 标准原文中检索条文。
    - get_session_hazards:回顾本会话已识别隐患(支持「刚才那张图」之类指代)。
    - export_report:导出 Markdown 报告。
+   - query_statistics:统计全库(跨会话)隐患数量;当用户询问某天/某时段隐患总数、某类别数量或频率排名时使用;date_from/date_to 格式 YYYY-MM-DD,不传则不限时间范围。
 4. 整改建议基于 query_kg 返回的 qualified_conditions(合格条件)或 rule_blocks 给出可操作项。
 5. 不编造标准条文与编号;检索不到时如实说明并给出 KG 内依据。
+6. 批量上传场景:
+   - 识别完成后的聚合摘要已包含统计信息,无需再逐张复述。
+   - 用户说「全部确认」→ 调用 confirm_hazards_batch(confirm_all=true)。
+   - 用户指定部分确认 → 调用 confirm_hazards_batch(image_ids=[...])。
+   - 用户要看某张详情 → 调用 get_session_hazards(image_id=X)。
+   - 用户要看证据不足的 → 调用 get_session_hazards(status_filter="uncertain")。
 """
 
 _STATUS_CN = {"confirmed_hazard": "明确隐患", "safe": "未见明显隐患", "uncertain": "证据不足"}

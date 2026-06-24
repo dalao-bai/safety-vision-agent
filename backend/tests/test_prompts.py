@@ -17,3 +17,9 @@ def test_render_detection_message_lists_hazards():
     msg = render_detection_message(r)
     assert "基坑临边防护" in msg and "防护缺失" in msg
     assert "是否正确" in msg
+
+
+def test_system_prompt_has_batch_rules():
+    assert "confirm_hazards_batch" in SYSTEM_PROMPT
+    assert "confirm_all=true" in SYSTEM_PROMPT
+    assert "status_filter" in SYSTEM_PROMPT
