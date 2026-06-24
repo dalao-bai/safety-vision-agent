@@ -77,7 +77,7 @@ class Orchestrator:
             if failed_files:
                 names = "、".join(f["filename"] for f in failed_files[:5])
                 if len(failed_files) > 5:
-                    names += f" 等{len(failed_files)}张"
+                    names += f" 等{len(failed_files) - 5}张"
                 fail_note = f"（{len(failed_files)} 张失败：{names}）"
 
             assistant_msg = (

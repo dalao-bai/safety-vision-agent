@@ -304,6 +304,15 @@ def test_confirm_hazards_batch_cross_session_blocked(tmp_path, kg_path):
     assert out["confirmed_count"] == 0
 
 
+def test_confirm_hazards_batch_no_args(tmp_path, kg_path):
+    ctx, img_id = _ctx(tmp_path, kg_path)
+    out = dispatch_tool("confirm_hazards_batch", {}, ctx)
+    assert out["ok"] is True
+    assert out["confirmed_count"] == 0
+    assert out["image_ids"] == []
+    assert ctx.db.get_image(img_id).status == "awaiting_confirmation"
+
+
 def test_get_session_hazards_status_filter(tmp_path, kg_path):
     ctx, img_id = _ctx(tmp_path, kg_path)
     ctx.db.add_hazards(img_id, [{"object_id": "stair_opening_protection",
