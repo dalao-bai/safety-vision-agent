@@ -105,3 +105,88 @@ def test_hazard_uncertainty_fields_default_none(tmp_path):
                              "evidence_sufficiency": "sufficient"}])
     h = db.get_hazards(img_id)[0]
     assert h.uncertainty_reason is None and h.missing_evidence is None
+
+
+_BASE_HAZARD = {"bbox": None, "reasoning_chain": [], "visual_evidence": "", "rule_basis": "", "evidence_sufficiency": "sufficient"}
+
+
+def test_query_hazard_stats_basic(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "s")
+    db.add_hazards(img_id, [
+        {**_BASE_HAZARD, "object_id": "pit", "status": "confirmed_hazard", "hazard_type_id": "missing_protection"},
+        {**_BASE_HAZARD, "object_id": "pit", "status": "confirmed_hazard", "hazard_type_id": "missing_protection"},
+        {**_BASE_HAZARD, "object_id": "stair", "status": "confirmed_hazard", "hazard_type_id": "discontinuous_protection"},
+    ])
+    db.mark_hazards_confirmed(img_id)
+    stats = db.query_hazard_stats()
+    assert stats["total"] == 3
+    assert stats["breakdown"][0]["count"] == 2
+    assert stats["breakdown"][0]["hazard_type_id"] == "missing_protection"
+    assert stats["breakdown"][1]["count"] == 1
+
+
+def test_query_hazard_stats_confirmed_only_false(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "s")
+    db.add_hazards(img_id, [
+        {**_BASE_HAZARD, "object_id": "pit", "status": "confirmed_hazard", "hazard_type_id": "missing_protection"},
+        {**_BASE_HAZARD, "object_id": "pit", "status": "uncertain", "hazard_type_id": None},
+    ])
+    assert db.query_hazard_stats(confirmed_only=True)["total"] == 1
+    assert db.query_hazard_stats(confirmed_only=False)["total"] == 2
+
+
+def test_query_hazard_stats_date_filter(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    old_img = db.add_image(sid, "old.png", "s", _created_at="2026-05-01T00:00:00Z")
+    new_img = db.add_image(sid, "new.png", "s", _created_at="2026-06-15T00:00:00Z")
+    for img_id in (old_img, new_img):
+        db.add_hazards(img_id, [{**_BASE_HAZARD, "object_id": "pit", "status": "confirmed_hazard", "hazard_type_id": "missing_protection"}])
+        db.mark_hazards_confirmed(img_id)
+    assert db.query_hazard_stats()["total"] == 2
+    assert db.query_hazard_stats(date_from="2026-06-01")["total"] == 1
+    assert db.query_hazard_stats(date_to="2026-05-31")["total"] == 1
+    assert db.query_hazard_stats(date_from="2026-06-01", date_to="2026-06-30")["total"] == 1
+    assert db.query_hazard_stats(date_from="2026-07-01")["total"] == 0
+
+
+def test_query_hazard_stats_hazard_type_filter(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img_id = db.add_image(sid, "p.png", "s")
+    db.add_hazards(img_id, [
+        {**_BASE_HAZARD, "object_id": "pit", "status": "confirmed_hazard", "hazard_type_id": "missing_protection"},
+        {**_BASE_HAZARD, "object_id": "stair", "status": "confirmed_hazard", "hazard_type_id": "discontinuous_protection"},
+    ])
+    db.mark_hazards_confirmed(img_id)
+    stats = db.query_hazard_stats(hazard_type_id="missing_protection")
+    assert stats["total"] == 1
+    assert stats["breakdown"][0]["hazard_type_id"] == "missing_protection"
+
+
+def test_query_hazard_stats_empty(tmp_path):
+    db = Database(str(tmp_path / "t.db"))
+    stats = db.query_hazard_stats()
+    assert stats["total"] == 0
+    assert stats["breakdown"] == []
+
+
+def test_get_pending_image_ids(tmp_path: Path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    img1 = db.add_image(sid, "p1.png", "s")
+    img2 = db.add_image(sid, "p2.png", "s")
+    img3 = db.add_image(sid, "p3.png", "s")
+    db.set_image_status(img2, "confirmed")
+
+    pending = db.get_pending_image_ids(sid)
+    assert sorted(pending) == sorted([img1, img3])
+
+    # cross-session isolation
+    sid2 = db.create_session()
+    img4 = db.add_image(sid2, "p4.png", "s")
+    assert img4 not in db.get_pending_image_ids(sid)

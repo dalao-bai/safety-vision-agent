@@ -96,11 +96,11 @@ class Database:
             return [Message(**dict(r)) for r in rows]
 
     # images / hazards
-    def add_image(self, sid: int, path: str, scene: str) -> int:
+    def add_image(self, sid: int, path: str, scene: str, _created_at: str | None = None) -> int:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO images(session_id, path, scene, status, created_at) VALUES(?,?,?,?,?)",
-                (sid, path, scene, "awaiting_confirmation", _now()),
+                (sid, path, scene, "awaiting_confirmation", _created_at or _now()),
             )
             self._conn.commit()
             return int(cur.lastrowid)
@@ -154,6 +154,14 @@ class Database:
             self._conn.execute("UPDATE hazards SET confirmed=1 WHERE image_id=?", (img_id,))
             self._conn.commit()
 
+    def get_pending_image_ids(self, session_id: int) -> list[int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM images WHERE session_id=? AND status='awaiting_confirmation'",
+                (session_id,),
+            ).fetchall()
+        return [r[0] for r in rows]
+
     def get_confirmed_hazards(self, sid: int) -> list[Hazard]:
         with self._lock:
             rows = self._conn.execute(
@@ -184,3 +192,45 @@ class Database:
         with self._lock:
             rows = self._conn.execute("SELECT * FROM corrections WHERE image_id=? ORDER BY id", (img_id,)).fetchall()
             return [Correction(**dict(r)) for r in rows]
+
+    def query_hazard_stats(
+        self,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        hazard_type_id: str | None = None,
+        object_id: str | None = None,
+        confirmed_only: bool = True,
+        top_n: int = 10,
+    ) -> dict:
+        conditions: list[str] = []
+        params: list[Any] = []
+        if confirmed_only:
+            conditions.append("h.status = 'confirmed_hazard'")
+        if date_from:
+            conditions.append("date(i.created_at) >= ?")
+            params.append(date_from)
+        if date_to:
+            conditions.append("date(i.created_at) <= ?")
+            params.append(date_to)
+        if hazard_type_id:
+            conditions.append("h.hazard_type_id = ?")
+            params.append(hazard_type_id)
+        if object_id:
+            conditions.append("h.object_id = ?")
+            params.append(object_id)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        base = f"FROM hazards h JOIN images i ON h.image_id=i.id {where}"
+        with self._lock:
+            total = self._conn.execute(f"SELECT COUNT(*) {base}", params).fetchone()[0]
+            rows = self._conn.execute(
+                f"SELECT h.hazard_type_id, h.object_id, COUNT(*) AS count {base} "
+                f"GROUP BY h.hazard_type_id, h.object_id ORDER BY count DESC LIMIT ?",
+                params + [top_n],
+            ).fetchall()
+        return {
+            "total": total,
+            "date_from": date_from,
+            "date_to": date_to,
+            "confirmed_only": confirmed_only,
+            "breakdown": [{"hazard_type_id": r[0], "object_id": r[1], "count": r[2]} for r in rows],
+        }
