@@ -6,6 +6,8 @@ from typing import Any
 
 
 class KGStore:
+    """内存知识图谱：防护对象、隐患类型和规则块。"""
+
     def __init__(self, data: dict[str, Any], rule_blocks: list[dict[str, Any]] | None = None):
         self._data = data
         self._objects = {o["id"]: o for o in data.get("objects", [])}
@@ -37,14 +39,20 @@ class KGStore:
         return self._objects.get(object_id)
 
     def object_id_for_name(self, name: str) -> str | None:
-        return self._name_to_id.get(name)
+        # 精确匹配
+        if name in self._name_to_id:
+            return self._name_to_id[name]
+        # 模糊匹配：KG名称包含输入名，或输入名包含KG名称
+        for kg_name, kg_id in self._name_to_id.items():
+            if name in kg_name or kg_name in name:
+                return kg_id
+        return None
 
     def get_hazard_type(self, hazard_type_id: str) -> dict[str, Any] | None:
         return self._hazard_types.get(hazard_type_id)
 
     def remediation_for(self, object_id: str) -> list[dict[str, str]]:
-        """Positive compliance conditions (qualified_conditions). May be empty for
-        objects whose rules live only in rule_blocks (e.g. foundation_pit)."""
+        """返回对象的合规条件列表（qualified_conditions）。"""
         obj = self._objects.get(object_id)
         if not obj:
             return []
@@ -58,8 +66,7 @@ class KGStore:
         return items
 
     def rule_blocks_for(self, object_id: str, hazard_type_id: str | None = None) -> list[dict[str, Any]]:
-        """Hazard rule blocks for an object, optionally filtered by hazard_type_id.
-        Returns trimmed dicts useful for grounding remediation/standard answers."""
+        """返回对象的隐患规则块，可按hazard_type_id过滤。"""
         blocks = self._rule_blocks_by_object.get(object_id, [])
         if hazard_type_id:
             blocks = [b for b in blocks if b.get("hazard_type_id") == hazard_type_id]

@@ -10,9 +10,33 @@ from typing import Any
 
 from app.kg.store import KGStore
 
-_VLM_INSTRUCTION = (
+# 完整格式：微调模型就绪后启用（含 rule_basis / evidence_sufficiency / reasoning_chain 等飞轮字段）
+_VLM_INSTRUCTION_FULL = (
     "你是四口五临边安全隐患识别模型。仔细看图,输出整图结论与隐患列表的 JSON。"
 )
+
+# 简化格式：先跑通用，微调数据只需输出这几个字段
+# {
+#   "scene": "四口五临边",
+#   "hazards": [
+#     {
+#       "related_object": "基坑临边防护",
+#       "hazard_type_id": "missing_protection",   // 无法判断时填 null
+#       "status": "confirmed_hazard",              // confirmed_hazard | uncertain | safe
+#       "visual_evidence": "坑边无防护栏杆",
+#       "object_bbox": [x1, y1, x2, y2]           // 可省略
+#     }
+#   ]
+# }
+_VLM_INSTRUCTION_SIMPLE = """\
+你是四口五临边安全隐患识别模型。仔细看图，以 JSON 输出隐患列表，格式如下：
+{"scene":"四口五临边","hazards":[{"related_object":"<防护对象名称>","hazard_type_id":"<隐患类型id或null>","status":"confirmed_hazard|uncertain|safe","visual_evidence":"<一句话视觉依据>","object_bbox":[x1,y1,x2,y2]}]}
+related_object 必须从以下 9 个名称中选一个，不得自行创造：楼梯口防护、电梯井口防护、预留洞口防护、通道口防护、阳台临边防护、屋面临边防护、楼层临边防护、基坑临边防护、跑道（斜道）临边防护。
+hazard_type_id 取值：missing_protection / discontinuous_protection / temporary_substitute / unstable_fixation / missing_protective_door / passage_abnormal，无法判断填 null。
+只输出 JSON，不要其他文字。\
+"""
+
+_VLM_INSTRUCTION = _VLM_INSTRUCTION_FULL  # 向后兼容，外部若有直接引用不受影响
 
 
 class DetectionError(Exception):
@@ -21,6 +45,8 @@ class DetectionError(Exception):
 
 @dataclass
 class Hazard:
+    """图像中识别到的单条隐患记录。"""
+
     object_id: str
     object_name: str
     status: str
@@ -37,6 +63,8 @@ class Hazard:
 
 @dataclass
 class DetectionResult:
+    """单张图像的VLM输出：场景标签与隐患列表。"""
+
     scene: str
     hazards: list[Hazard]
 
@@ -69,10 +97,14 @@ def _extract_hazards(parsed: Any) -> tuple[str, list[dict]]:
 
 
 class Detector:
-    def __init__(self, client: Any, model: str, kg: KGStore):
+    """调用VLM并将JSON输出解析为DetectionResult。"""
+
+    def __init__(self, client: Any, model: str, kg: KGStore,
+                 instruction: str = _VLM_INSTRUCTION_SIMPLE):
         self._client = client
         self._model = model
         self._kg = kg
+        self._instruction = instruction
 
     def detect(self, image_path: str) -> DetectionResult:
         content = self._call(image_path)
@@ -89,7 +121,7 @@ class Detector:
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": _VLM_INSTRUCTION},
+                    {"type": "text", "text": self._instruction},
                     {"type": "image_url", "image_url": {"url": _image_data_url(image_path)}},
                 ],
             }],
@@ -127,4 +159,5 @@ class Detector:
 def build_detector(settings, kg: KGStore) -> Detector:
     from openai import OpenAI
     client = OpenAI(base_url=settings.vlm_api_base_url, api_key=settings.vlm_api_key)
-    return Detector(client=client, model=settings.vlm_model, kg=kg)
+    instruction = _VLM_INSTRUCTION_FULL if settings.vlm_instruction_mode == "full" else _VLM_INSTRUCTION_SIMPLE
+    return Detector(client=client, model=settings.vlm_model, kg=kg, instruction=instruction)

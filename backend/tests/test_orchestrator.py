@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from app.agent.orchestrator import Orchestrator
+from app.agent.orchestrator import Orchestrator, ingest_image, ingest_batch_images
 from app.agent.tools import ToolContext
 from app.kg.store import KGStore
 from app.persistence.db import Database
@@ -103,7 +103,7 @@ def test_handle_image_persists_and_presents(tmp_path, kg_path):
                visual_evidence="ev", rule_basis="", evidence_sufficiency="insufficient",
                uncertainty_reason="protective_component_not_visible", reasoning_chain=[],
                missing_evidence="栏杆是否被遮挡")])
-    img_id = orch.handle_image(sid, "p.png", result)
+    img_id = ingest_image(db, sid, "p.png", result)
     hz = db.get_hazards(img_id)
     assert hz[0].uncertainty_reason == "protective_component_not_visible"
     assert hz[0].missing_evidence == "栏杆是否被遮挡"
@@ -123,7 +123,7 @@ def _sample_result():
 def test_completed_image_detection_summary_compressed(tmp_path, kg_path):
     orch, db, _ = _orch(tmp_path, kg_path, [])
     sid = db.create_session()
-    img_id = orch.handle_image(sid, "p.png", _sample_result())
+    img_id = ingest_image(db, sid, "p.png", _sample_result())
     # confirm the image → terminal state
     db.mark_hazards_confirmed(img_id)
     db.set_image_status(img_id, "confirmed")
@@ -144,7 +144,7 @@ def test_completed_image_detection_summary_compressed(tmp_path, kg_path):
 def test_pending_image_detection_summary_kept(tmp_path, kg_path):
     orch, db, _ = _orch(tmp_path, kg_path, [])
     sid = db.create_session()
-    orch.handle_image(sid, "p.png", _sample_result())
+    ingest_image(db, sid, "p.png", _sample_result())
 
     msgs = orch._build_messages(sid)
     asst_contents = [m["content"] for m in msgs if m["role"] == "assistant"]
@@ -155,8 +155,8 @@ def test_pending_image_detection_summary_kept(tmp_path, kg_path):
 def test_mixed_images_compress_only_completed(tmp_path, kg_path):
     orch, db, _ = _orch(tmp_path, kg_path, [])
     sid = db.create_session()
-    img1 = orch.handle_image(sid, "p1.png", _sample_result())
-    img2 = orch.handle_image(sid, "p2.png", _sample_result())
+    img1 = ingest_image(db, sid, "p1.png", _sample_result())
+    img2 = ingest_image(db, sid, "p2.png", _sample_result())
     db.mark_hazards_confirmed(img1)
     db.set_image_status(img1, "confirmed")
     # img2 remains awaiting_confirmation
@@ -203,7 +203,7 @@ def test_handle_batch_images_success(tmp_path, kg_path):
     sid = db.create_session()
     succeeded = [("p1.png", _sample_result()), ("p2.png", _sample_result())]
 
-    result = orch.handle_batch_images(sid, succeeded, failed_files=[])
+    result = ingest_batch_images(db, sid, succeeded, failed_files=[])
 
     assert result["succeeded"] == 2
     assert result["failed"] == 0
@@ -220,8 +220,8 @@ def test_handle_batch_images_partial_failure(tmp_path, kg_path):
     orch, db, _ = _orch(tmp_path, kg_path, [])
     sid = db.create_session()
 
-    result = orch.handle_batch_images(
-        sid,
+    result = ingest_batch_images(
+        db, sid,
         succeeded=[("p1.png", _sample_result())],
         failed_files=[{"filename": "p2.png", "reason": "vlm_error"}],
     )
@@ -238,8 +238,8 @@ def test_handle_batch_images_all_failed(tmp_path, kg_path):
     orch, db, _ = _orch(tmp_path, kg_path, [])
     sid = db.create_session()
 
-    result = orch.handle_batch_images(
-        sid,
+    result = ingest_batch_images(
+        db, sid,
         succeeded=[],
         failed_files=[
             {"filename": "p1.png", "reason": "vlm_error"},
@@ -260,8 +260,8 @@ def test_handle_batch_images_all_failed(tmp_path, kg_path):
 def test_build_messages_batch_compression(tmp_path, kg_path):
     orch, db, _ = _orch(tmp_path, kg_path, [])
     sid = db.create_session()
-    orch.handle_batch_images(sid, [("p1.png", _sample_result()), ("p2.png", _sample_result())],
-                             failed_files=[])
+    ingest_batch_images(db, sid, [("p1.png", _sample_result()), ("p2.png", _sample_result())],
+                        failed_files=[])
     ctx_msg = next(m for m in db.get_messages(sid)
                    if m.content.startswith("[context] 批量上传 image_ids="))
     img_ids = [int(x) for x in ctx_msg.content.split("=")[1].split(",")]
@@ -293,10 +293,150 @@ def test_build_messages_single_leading_system(tmp_path, kg_path):
                status="confirmed_hazard", hazard_type_id="missing_protection", hazard_type="防护缺失",
                bbox=[1, 2, 3, 4], visual_evidence="ev", rule_basis="", evidence_sufficiency="sufficient",
                uncertainty_reason=None, reasoning_chain=[], missing_evidence=None)])
-    img_id = orch.handle_image(sid, "p.png", result)
+    img_id = ingest_image(db, sid, "p.png", result)
     db.add_message(sid, "user", "hi")
     msgs = orch._build_messages(sid)
     system_msgs = [m for m in msgs if m["role"] == "system"]
     assert len(system_msgs) == 1
     assert msgs[0]["role"] == "system"
     assert f"image_id={img_id}" in msgs[0]["content"]  # context hoisted into leading system block
+
+
+# --- LoopState unit tests ---
+
+def test_loop_state_initial_values(tmp_path, kg_path):
+    from app.agent.orchestrator import LoopState
+    state = LoopState(session_id=42, max_iter=5, timeout_seconds=30)
+    assert state.session_id == 42
+    assert state.max_iter == 5
+    assert state.iteration == 0
+    assert state.outcome == "pending"
+    assert state.turn_user_msg_id is None
+    assert state.messages == []
+    assert state.tool_records == []
+    assert isinstance(state.cross_turn_cache, set)
+    assert state.started_at > 0
+    assert state.deadline is not None
+    assert state.deadline > state.started_at
+
+
+def test_loop_state_no_deadline_when_timeout_zero(tmp_path, kg_path):
+    from app.agent.orchestrator import LoopState
+    state = LoopState(session_id="test_session", max_iter=5, timeout_seconds=0)
+    assert state.deadline is None
+    assert not state.is_timed_out()
+
+
+def test_loop_state_has_iterations_left(tmp_path, kg_path):
+    from app.agent.orchestrator import LoopState
+    state = LoopState(session_id="test_session", max_iter=3, timeout_seconds=0)
+    assert state.has_iterations_left()
+    state.iteration = 2
+    assert state.has_iterations_left()
+    state.iteration = 3
+    assert not state.has_iterations_left()
+
+
+def test_loop_state_is_timed_out(tmp_path, kg_path):
+    import time
+    from app.agent.orchestrator import LoopState
+    state = LoopState(session_id="test_session", max_iter=5, timeout_seconds=0.001)
+    time.sleep(0.01)
+    assert state.is_timed_out()
+
+
+# --- _session_tool_caches should not exist ---
+
+def test_no_session_tool_caches_module_var():
+    import app.agent.orchestrator as m
+    assert not hasattr(m, "_session_tool_caches")
+
+
+# --- tool_traces integration via orchestrator ---
+
+def test_tool_traces_written_on_tool_call(tmp_path, kg_path):
+    script = [
+        ("", [("search_standards", {"query": "基坑 防护"})]),
+        ("基坑周边应设置防护栏杆。", []),
+    ]
+    orch, db, _ = _orch(tmp_path, kg_path, script)
+    sid = db.create_session()
+    orch.handle_message(sid, "基坑临边怎么防护?")
+
+    traces = db.get_tool_traces(sid)
+    assert len(traces) == 1
+    t = traces[0]
+    assert t.tool_name == "search_standards"
+    assert t.outcome == "ok"
+    assert t.loop_outcome == "no_tool_calls"
+    assert t.iteration == 0
+    assert "基坑" in t.args_json
+
+
+def test_tool_traces_guard_blocked_recorded(tmp_path, kg_path):
+    script = [
+        ("", [("search_standards", {"query": "基坑"})]),
+        ("", [("search_standards", {"query": "基坑"})]),   # duplicate → guard_blocked
+        ("已查到。", []),
+    ]
+    orch, db, _ = _orch(tmp_path, kg_path, script)
+    sid = db.create_session()
+    orch.handle_message(sid, "基坑?")
+
+    traces = db.get_tool_traces(sid)
+    assert len(traces) == 2
+    outcomes = {t.outcome for t in traces}
+    assert "ok" in outcomes
+    assert "guard_blocked" in outcomes
+
+
+def test_tool_traces_finish_outcome(tmp_path, kg_path):
+    script = [
+        ("", [("finish", {"reply": "全部完成"})]),
+    ]
+    orch, db, _ = _orch(tmp_path, kg_path, script)
+    sid = db.create_session()
+    reply = orch.handle_message(sid, "完成了吗?")
+    assert reply == "全部完成"
+
+    traces = db.get_tool_traces(sid)
+    assert len(traces) == 1
+    assert traces[0].loop_outcome == "finish"
+
+
+def test_cross_turn_cache_via_loop_state(tmp_path, kg_path):
+    """Cross-turn cache in LoopState blocks repeated cacheable calls across turns."""
+    from app.agent.orchestrator import _session_cross_caches
+    db = Database(str(tmp_path / "t.db"))
+    kg = KGStore.load(str(kg_path))
+
+    def ctx_factory(session_id):
+        return ToolContext(db=db, kg=kg, standards=FakeStandards(), intake=FakeIntake(),
+                          report_dir=str(tmp_path), session_id=session_id)
+
+    # First turn: model calls search_standards once → ok
+    script1 = [
+        ("", [("search_standards", {"query": "基坑"})]),
+        ("第一轮回答。", []),
+    ]
+    orch = Orchestrator(db=db, agent_client=ScriptedAgent(script1), agent_model="x",
+                        ctx_factory=ctx_factory, max_iterations=5)
+    sid = db.create_session()
+    orch.handle_message(sid, "第一问")
+
+    # Second turn: model re-calls same query → cross-turn cache should block it
+    script2 = [
+        ("", [("search_standards", {"query": "基坑"})]),   # cache hit → guard_blocked
+        ("第二轮回答。", []),
+    ]
+    orch._client = ScriptedAgent(script2)
+    orch.handle_message(sid, "第二问")
+
+    traces = db.get_tool_traces(sid)
+    second_turn_traces = [t for t in traces if t.turn_user_msg_id == db.get_messages(sid)[-2].id
+                          or True]
+    # The second call to search_standards with same args should be guard_blocked
+    blocked = [t for t in traces if t.outcome == "guard_blocked"]
+    assert len(blocked) == 1
+    assert blocked[0].tool_name == "search_standards"
+

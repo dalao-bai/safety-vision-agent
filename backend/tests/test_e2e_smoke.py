@@ -27,7 +27,7 @@ def app_client(tmp_path, kg_path, monkeypatch):
     # route modules (images, messages) keep the OLD reference via their module-level
     # `from app.config import get_settings` binding.  We must clear all of them.
     seen = set()
-    for ref in (config.get_settings, _images_mod.get_settings, _messages_mod.get_settings):
+    for ref in (config.get_settings, _images_mod.get_settings):
         if id(ref) not in seen:
             ref.cache_clear()
             seen.add(id(ref))
@@ -120,7 +120,7 @@ def test_confirm_then_export_nonempty(tmp_path, kg_path, monkeypatch):
     import app.api.images as _images_mod
     import app.api.messages as _messages_mod
     seen = set()
-    for ref in (config.get_settings, _images_mod.get_settings, _messages_mod.get_settings):
+    for ref in (config.get_settings, _images_mod.get_settings):
         if id(ref) not in seen:
             ref.cache_clear()
             seen.add(id(ref))
@@ -136,6 +136,7 @@ def test_confirm_then_export_nonempty(tmp_path, kg_path, monkeypatch):
             status="confirmed_hazard", hazard_type_id="missing_protection", hazard_type="防护缺失",
             bbox=[0, 278, 999, 999], visual_evidence="未见连续防护栏杆", rule_basis="rb",
             evidence_sufficiency="sufficient", uncertainty_reason=None, reasoning_chain=[], missing_evidence=None)]))
+    # Scripted agent: confirm → export_report → text reply
     state = {"n": 0}
     def create(**kwargs):
         state["n"] += 1
@@ -143,7 +144,11 @@ def test_confirm_then_export_nonempty(tmp_path, kg_path, monkeypatch):
             tc = SimpleNamespace(id="c0", type="function", function=SimpleNamespace(
                 name="confirm_hazards", arguments=json.dumps({"image_id": 1})))
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="", tool_calls=[tc]))])
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="已确认。", tool_calls=None))])
+        if state["n"] == 2:
+            tc = SimpleNamespace(id="c1", type="function", function=SimpleNamespace(
+                name="export_report", arguments="{}"))
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="", tool_calls=[tc]))])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="已确认并导出报告。", tool_calls=None))])
     app.dependency_overrides[deps.get_agent_client] = lambda: SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     app.dependency_overrides[deps.get_standards] = lambda: SimpleNamespace(search=lambda q, top_k=3: [])
@@ -152,8 +157,11 @@ def test_confirm_then_export_nonempty(tmp_path, kg_path, monkeypatch):
     p = tmp_path / "site.png"; p.write_bytes(_tiny_png_bytes())
     with open(p, "rb") as f:
         assert c.post(f"/sessions/{sid}/images", files={"file": ("site.png", f, "image/png")}).json()["image_id"] == 1
-    c.post(f"/sessions/{sid}/messages", json={"text": "对的,没问题"})
-    report_path = c.post(f"/sessions/{sid}/report").json()["report_path"]
-    text = Path(report_path).read_text(encoding="utf-8")
+    reply = c.post(f"/sessions/{sid}/messages", json={"text": "对的,没问题"}).json()["reply"]
+    assert "导出" in reply
+    from docx import Document
+    report_file = tmp_path / "reports" / f"session_{sid}_report.docx"
+    assert report_file.exists(), f"report not found at {report_file}"
+    text = "\n".join(para.text for para in Document(str(report_file)).paragraphs)
     assert "基坑临边防护" in text
     assert "未发现已确认隐患" not in text

@@ -2,22 +2,27 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.kg.store import KGStore
 from app.persistence.db import Database
 from app.reports.builder import build_docx_report
 from app.vlm.detector import DetectionResult, Hazard as VHazard
 
+if TYPE_CHECKING:
+    from app.agent.orchestrator import LoopState
+
 
 @dataclass
 class ToolContext:
+    """单次工具调用所需的全部依赖。"""
+
     db: Database
     kg: KGStore
     standards: Any
     intake: Any
     report_dir: str
-    session_id: int
+    session_id: str
 
 
 def _owns_image(ctx: "ToolContext", img_id: int) -> bool:
@@ -28,6 +33,12 @@ def _owns_image(ctx: "ToolContext", img_id: int) -> bool:
 
 
 TOOL_SCHEMAS = [
+    {"type": "function", "function": {
+        "name": "finish",
+        "description": "完成所有工具查询后调用，提交最终回复。reply 填写向用户展示的完整内容。",
+        "parameters": {"type": "object", "properties": {
+            "reply": {"type": "string", "description": "向用户显示的完整回复"},
+        }, "required": ["reply"]}}},
     {"type": "function", "function": {
         "name": "query_kg",
         "description": "查询知识图谱中防护对象或隐患类型的定义、检查范围、合格条件(整改依据)、规则块与标准出处。",
@@ -95,22 +106,23 @@ _REQUIRED_PARAMS: dict[str, list[str]] = {
     for s in TOOL_SCHEMAS
 }
 
+# Read-only tools whose results are stable within a session — safe to cache cross-turn.
+_CACHEABLE_TOOLS: frozenset[str] = frozenset({"query_kg", "search_standards", "query_statistics"})
+
 
 class ToolGuard:
-    """Per-turn guard: validates tool name, required params, and deduplicates calls.
+    """每轮守卫：校验工具名、必填参数，并对重复调用去重。"""
 
-    Create one instance per handle_message call; discard after the turn ends.
-    """
-
-    def __init__(self) -> None:
+    def __init__(self, state: "LoopState | None" = None,
+                 cross_turn_cache: set[str] | None = None) -> None:
         self._seen: list[str] = []
+        # state takes precedence; fall back to legacy kwarg
+        self._cross_cache: set[str] | None = (
+            state.cross_turn_cache if state is not None else cross_turn_cache
+        )
 
     def check(self, name: str, args: dict[str, Any]) -> str | None:
-        """Return None to allow the call, or an error string to reject it.
-
-        The error string is returned to the model as the tool result so it can
-        self-correct rather than crashing the loop.
-        """
+        """Return None to allow the call, or an error string to reject it."""
         if name not in _KNOWN_TOOLS:
             return f"未知工具：{name}，可用工具：{', '.join(sorted(_KNOWN_TOOLS))}"
         missing = [k for k in _REQUIRED_PARAMS.get(name, [])
@@ -120,7 +132,11 @@ class ToolGuard:
         key = json.dumps([name, args], sort_keys=True, ensure_ascii=False)
         if key in self._seen:
             return f"工具 {name} 已以相同参数在本轮调用过，跳过重复执行"
+        if name in _CACHEABLE_TOOLS and self._cross_cache is not None and key in self._cross_cache:
+            return f"工具 {name} 在本会话已以相同参数查询过，结果已缓存，跳过重复查询"
         self._seen.append(key)
+        if name in _CACHEABLE_TOOLS and self._cross_cache is not None:
+            self._cross_cache.add(key)
         return None
 
 
@@ -142,6 +158,9 @@ def _hazard_brief(h, full: bool = False) -> dict:
 
 
 def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    """按工具名路由调用并返回结果字典。"""
+    if name == "finish":
+        return {"done": True, "reply": args.get("reply", "")}
     if name == "query_kg":
         oid = args.get("object_id")
         hid = args.get("hazard_type_id")
@@ -209,7 +228,8 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str
             session_id=ctx.session_id, hazards=hazards, report_dir=ctx.report_dir,
             object_name_for=lambda oid: (ctx.kg.get_object(oid) or {}).get("name", oid),
             hazard_name_for=lambda hid: (ctx.kg.get_hazard_type(hid) or {}).get("name", hid or ""),
-            remediation_for=ctx.kg.remediation_for)
+            remediation_for=ctx.kg.remediation_for,
+            rule_blocks_for=ctx.kg.rule_blocks_for)
         return {"report_path": path}
     if name == "confirm_hazards":
         img_id = int(args["image_id"])

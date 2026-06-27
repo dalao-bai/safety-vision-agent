@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,14 +46,7 @@ class IntakeWriter:
         images.mkdir(parents=True, exist_ok=True)
         corrections.mkdir(parents=True, exist_ok=True)
 
-        stem = src.stem
-        base_stem = stem
-        counter = 0
-        while ((images / f"{stem}.json").exists()
-               or (images / f"{stem}{src.suffix.lower()}").exists()
-               or (corrections / f"{stem}.correction.json").exists()):
-            counter += 1
-            stem = f"{base_stem}_{counter}"
+        stem = f"{src.stem}_{uuid.uuid4().hex[:8]}"
         dest_img = images / f"{stem}{src.suffix.lower()}"
         shutil.copy2(src, dest_img)
 

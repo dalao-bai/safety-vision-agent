@@ -14,7 +14,7 @@ def create_session(db: Database = Depends(deps.get_db)):
 
 
 @router.get("/sessions/{sid}")
-def get_session(sid: int, db: Database = Depends(deps.get_db)):
+def get_session(sid: str, db: Database = Depends(deps.get_db)):
     if not db.session_exists(sid):
         raise HTTPException(404, "session not found")
     return {"session_id": sid, "messages": [

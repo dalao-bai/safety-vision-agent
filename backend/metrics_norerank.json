@@ -1,0 +1,48 @@
+{
+  "summary": {
+    "n_samples": 5,
+    "rerank_enabled": false,
+    "top_k": 5,
+    "mean_context_recall": 0.9333333333333332,
+    "mean_context_precision": 0.32,
+    "mean_mrr": 0.75,
+    "mean_ndcg@5": 0.790858171598644
+  },
+  "details": [
+    {
+      "question": "临边的定义是什么？围护设施高度要求是多少？",
+      "context_recall": 1.0,
+      "context_precision": 0.2,
+      "mrr": 1.0,
+      "ndcg@5": 1.0
+    },
+    {
+      "question": "脚手架搭设前和搭设完毕后的安全交底与验收要求是什么？",
+      "context_recall": 0.6666666666666666,
+      "context_precision": 0.4,
+      "mrr": 0.25,
+      "ndcg@5": 0.38364913903790027
+    },
+    {
+      "question": "脚手架基础应如何处理防止积水浸泡？",
+      "context_recall": 1.0,
+      "context_precision": 0.4,
+      "mrr": 0.5,
+      "ndcg@5": 0.6509209298071326
+    },
+    {
+      "question": "连墙件、剪刀撑对脚手架架体稳定性有什么要求？",
+      "context_recall": 1.0,
+      "context_precision": 0.2,
+      "mrr": 1.0,
+      "ndcg@5": 1.0
+    },
+    {
+      "question": "超过规范允许高度的脚手架专项施工方案有哪些要求？",
+      "context_recall": 1.0,
+      "context_precision": 0.4,
+      "mrr": 1.0,
+      "ndcg@5": 0.9197207891481876
+    }
+  ]
+}

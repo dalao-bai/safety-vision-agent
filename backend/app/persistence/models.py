@@ -7,7 +7,7 @@ from typing import Any
 @dataclass
 class Message:
     id: int
-    session_id: int
+    session_id: str
     role: str
     content: str
     created_at: str
@@ -16,7 +16,7 @@ class Message:
 @dataclass
 class ImageRecord:
     id: int
-    session_id: int
+    session_id: str
     path: str
     scene: str
     status: str
@@ -46,4 +46,31 @@ class Correction:
     image_id: int
     note: str
     intake_path: str
+    created_at: str
+
+
+@dataclass
+class ToolCallRecord:
+    """In-memory record built during a single handle_message call."""
+    name: str
+    args: dict
+    result_summary: str
+    duration_ms: float
+    outcome: str   # "ok" | "error" | "guard_blocked"
+    iteration: int
+
+
+@dataclass
+class ToolTrace:
+    """Persisted row in the tool_traces table."""
+    id: int
+    session_id: str
+    turn_user_msg_id: int
+    iteration: int
+    tool_name: str
+    args_json: str
+    result_summary: str
+    duration_ms: float
+    outcome: str        # "ok" | "error" | "guard_blocked"
+    loop_outcome: str   # "finish" | "no_tool_calls" | "timeout" | "max_iter" | "pending"
     created_at: str

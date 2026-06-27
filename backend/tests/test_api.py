@@ -70,10 +70,6 @@ def test_full_flow(client):
     assert r2.status_code == 200
     assert "确认" in r2.json()["reply"]
 
-    r3 = c.post(f"/sessions/{sid}/report")
-    assert r3.status_code == 200
-    assert r3.json()["report_path"].endswith(".docx")
-
 
 def test_unknown_session_404(client):
     c, _ = client

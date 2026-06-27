@@ -3,27 +3,28 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import Correction, Hazard, ImageRecord, Message
+from .models import Correction, Hazard, ImageRecord, Message, ToolTrace
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS images (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
   path TEXT NOT NULL,
   scene TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -51,6 +52,19 @@ CREATE TABLE IF NOT EXISTS corrections (
   intake_path TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tool_traces (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  turn_user_msg_id INTEGER NOT NULL,
+  iteration INTEGER NOT NULL,
+  tool_name TEXT NOT NULL,
+  args_json TEXT NOT NULL,
+  result_summary TEXT NOT NULL,
+  duration_ms REAL NOT NULL,
+  outcome TEXT NOT NULL,
+  loop_outcome TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL
+);
 """
 
 
@@ -68,18 +82,20 @@ class Database:
         self._lock = threading.Lock()
 
     # sessions / messages
-    def create_session(self) -> int:
+    def create_session(self) -> str:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        sid = f"{ts}_{uuid.uuid4().hex[:8]}"
         with self._lock:
-            cur = self._conn.execute("INSERT INTO sessions(created_at) VALUES(?)", (_now(),))
+            self._conn.execute("INSERT INTO sessions(id, created_at) VALUES(?,?)", (sid, _now()))
             self._conn.commit()
-            return int(cur.lastrowid)
+        return sid
 
-    def session_exists(self, sid: int) -> bool:
+    def session_exists(self, sid: str) -> bool:
         with self._lock:
             row = self._conn.execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone()
             return row is not None
 
-    def add_message(self, sid: int, role: str, content: str) -> int:
+    def add_message(self, sid: str, role: str, content: str) -> int:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO messages(session_id, role, content, created_at) VALUES(?,?,?,?)",
@@ -88,7 +104,7 @@ class Database:
             self._conn.commit()
             return int(cur.lastrowid)
 
-    def get_messages(self, sid: int) -> list[Message]:
+    def get_messages(self, sid: str) -> list[Message]:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM messages WHERE session_id=? ORDER BY id", (sid,)
@@ -96,7 +112,7 @@ class Database:
             return [Message(**dict(r)) for r in rows]
 
     # images / hazards
-    def add_image(self, sid: int, path: str, scene: str, _created_at: str | None = None) -> int:
+    def add_image(self, sid: str, path: str, scene: str, _created_at: str | None = None) -> int:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO images(session_id, path, scene, status, created_at) VALUES(?,?,?,?,?)",
@@ -154,7 +170,7 @@ class Database:
             self._conn.execute("UPDATE hazards SET confirmed=1 WHERE image_id=?", (img_id,))
             self._conn.commit()
 
-    def get_pending_image_ids(self, session_id: int) -> list[int]:
+    def get_pending_image_ids(self, session_id: str) -> list[int]:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id FROM images WHERE session_id=? AND status='awaiting_confirmation'",
@@ -162,7 +178,7 @@ class Database:
             ).fetchall()
         return [r[0] for r in rows]
 
-    def get_confirmed_hazards(self, sid: int) -> list[Hazard]:
+    def get_confirmed_hazards(self, sid: str) -> list[Hazard]:
         with self._lock:
             rows = self._conn.execute(
                 """SELECT h.* FROM hazards h JOIN images i ON h.image_id=i.id
@@ -170,7 +186,7 @@ class Database:
             ).fetchall()
             return [self._row_to_hazard(r) for r in rows]
 
-    def get_session_hazards(self, sid: int) -> list[Hazard]:
+    def get_session_hazards(self, sid: str) -> list[Hazard]:
         with self._lock:
             rows = self._conn.execute(
                 """SELECT h.* FROM hazards h JOIN images i ON h.image_id=i.id
@@ -192,6 +208,47 @@ class Database:
         with self._lock:
             rows = self._conn.execute("SELECT * FROM corrections WHERE image_id=? ORDER BY id", (img_id,)).fetchall()
             return [Correction(**dict(r)) for r in rows]
+
+    # tool traces
+    def add_tool_trace(
+        self,
+        session_id: str,
+        turn_user_msg_id: int,
+        iteration: int,
+        tool_name: str,
+        args_json: str,
+        result_summary: str,
+        duration_ms: float,
+        outcome: str,
+        loop_outcome: str = "pending",
+    ) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                """INSERT INTO tool_traces
+                   (session_id, turn_user_msg_id, iteration, tool_name, args_json,
+                    result_summary, duration_ms, outcome, loop_outcome, created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (session_id, turn_user_msg_id, iteration, tool_name, args_json,
+                 result_summary, duration_ms, outcome, loop_outcome, _now()),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def flush_tool_traces(self, session_id: str, loop_outcome: str) -> None:
+        """Back-fill loop_outcome for all pending traces in this session's current turn."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE tool_traces SET loop_outcome=? WHERE session_id=? AND loop_outcome='pending'",
+                (loop_outcome, session_id),
+            )
+            self._conn.commit()
+
+    def get_tool_traces(self, session_id: str) -> list[ToolTrace]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tool_traces WHERE session_id=? ORDER BY id", (session_id,)
+            ).fetchall()
+            return [ToolTrace(**dict(r)) for r in rows]
 
     def query_hazard_stats(
         self,

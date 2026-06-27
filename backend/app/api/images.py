@@ -9,8 +9,7 @@ from typing import List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 import app.api.deps as deps
-from app.agent.orchestrator import Orchestrator
-from app.agent.tools import ToolContext
+from app.agent.orchestrator import ingest_image, ingest_batch_images
 from app.config import get_settings
 from app.vlm.detector import DetectionError
 
@@ -19,7 +18,7 @@ router = APIRouter()
 _ALLOWED = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 
-def _save_upload(data: bytes, sid: int, suffix: str, upload_dir: Path) -> str:
+def _save_upload(data: bytes, sid: str, suffix: str, upload_dir: Path) -> str:
     upload_dir.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha1(data).hexdigest()[:16]
     dest = (upload_dir / f"{sid}_{digest}{suffix}").resolve()
@@ -29,21 +28,10 @@ def _save_upload(data: bytes, sid: int, suffix: str, upload_dir: Path) -> str:
     return str(dest)
 
 
-def _make_orch(db, agent_client, kg, standards, intake, settings):
-    ctx_factory = lambda session_id: ToolContext(
-        db=db, kg=kg, standards=standards, intake=intake,
-        report_dir=settings.report_dir, session_id=session_id)
-    return Orchestrator(db=db, agent_client=agent_client, agent_model=settings.agent_model,
-                        ctx_factory=ctx_factory, max_iterations=settings.max_tool_iterations)
-
-
 @router.post("/sessions/{sid}/images")
-def upload_image(sid: int, file: UploadFile = File(...),
-                 db=Depends(deps.get_db), kg=Depends(deps.get_kg),
-                 detector=Depends(deps.get_detector),
-                 agent_client=Depends(deps.get_agent_client),
-                 intake=Depends(deps.get_intake),
-                 standards=Depends(deps.get_standards)):
+def upload_image(sid: str, file: UploadFile = File(...),
+                 db=Depends(deps.get_db),
+                 detector=Depends(deps.get_detector)):
     if not db.session_exists(sid):
         raise HTTPException(404, "session not found")
     settings = get_settings()
@@ -60,8 +48,7 @@ def upload_image(sid: int, file: UploadFile = File(...),
     except DetectionError as exc:
         raise HTTPException(422, f"识别失败: {exc}")
 
-    orch = _make_orch(db, agent_client, kg, standards, intake, settings)
-    img_id = orch.handle_image(sid, path, result)
+    img_id = ingest_image(db, sid, path, result)
     msgs = db.get_messages(sid)
     assistant_message = next((m.content for m in reversed(msgs) if m.role == "assistant"), "")
     return {"image_id": img_id, "scene": result.scene,
@@ -73,21 +60,17 @@ def upload_image(sid: int, file: UploadFile = File(...),
 
 @router.post("/sessions/{sid}/images/batch")
 def upload_batch_images(
-    sid: int,
+    sid: str,
     files: List[UploadFile] = File(...),
     db=Depends(deps.get_db),
-    kg=Depends(deps.get_kg),
     detector=Depends(deps.get_detector),
-    agent_client=Depends(deps.get_agent_client),
-    intake=Depends(deps.get_intake),
-    standards=Depends(deps.get_standards),
 ):
     if not db.session_exists(sid):
         raise HTTPException(404, "session not found")
     settings = get_settings()
     upload_dir = Path(settings.upload_dir)
 
-    valid: list[tuple[str, str]] = []  # (original_filename, dest_path)
+    valid: list[tuple[str, str]] = []
     failed_files: list[dict] = []
 
     for f in files:
@@ -124,7 +107,6 @@ def upload_batch_images(
         if result is None:
             failed_files.append({"filename": filename, "reason": "vlm_error"})
 
-    orch = _make_orch(db, agent_client, kg, standards, intake, settings)
-    response = orch.handle_batch_images(sid, succeeded, failed_files)
+    response = ingest_batch_images(db, sid, succeeded, failed_files)
     response["batch_id"] = str(uuid.uuid4())
     return response

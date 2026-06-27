@@ -190,3 +190,55 @@ def test_get_pending_image_ids(tmp_path: Path):
     sid2 = db.create_session()
     img4 = db.add_image(sid2, "p4.png", "s")
     assert img4 not in db.get_pending_image_ids(sid)
+
+
+def test_tool_trace_roundtrip(tmp_path: Path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    msg_id = db.add_message(sid, "user", "hi")
+
+    trace_id = db.add_tool_trace(
+        session_id=sid, turn_user_msg_id=msg_id, iteration=0,
+        tool_name="search_standards", args_json='{"query": "基坑"}',
+        result_summary="hits:1", duration_ms=12.5, outcome="ok",
+    )
+    assert trace_id > 0
+
+    traces = db.get_tool_traces(sid)
+    assert len(traces) == 1
+    t = traces[0]
+    assert t.tool_name == "search_standards"
+    assert t.outcome == "ok"
+    assert t.loop_outcome == "pending"
+    assert t.duration_ms == 12.5
+    assert t.args_json == '{"query": "基坑"}'
+
+
+def test_tool_trace_flush(tmp_path: Path):
+    db = Database(str(tmp_path / "t.db"))
+    sid = db.create_session()
+    msg_id = db.add_message(sid, "user", "hi")
+
+    db.add_tool_trace(sid, msg_id, 0, "query_kg", "{}", "result", 5.0, "ok")
+    db.add_tool_trace(sid, msg_id, 1, "finish", "{}", "done", 2.0, "ok")
+
+    db.flush_tool_traces(sid, "finish")
+
+    traces = db.get_tool_traces(sid)
+    assert all(t.loop_outcome == "finish" for t in traces)
+
+
+def test_tool_trace_flush_cross_session_isolation(tmp_path: Path):
+    db = Database(str(tmp_path / "t.db"))
+    sid1 = db.create_session()
+    sid2 = db.create_session()
+    m1 = db.add_message(sid1, "user", "a")
+    m2 = db.add_message(sid2, "user", "b")
+
+    db.add_tool_trace(sid1, m1, 0, "query_kg", "{}", "r", 1.0, "ok")
+    db.add_tool_trace(sid2, m2, 0, "query_kg", "{}", "r", 1.0, "ok")
+
+    db.flush_tool_traces(sid1, "no_tool_calls")
+
+    assert db.get_tool_traces(sid1)[0].loop_outcome == "no_tool_calls"
+    assert db.get_tool_traces(sid2)[0].loop_outcome == "pending"
