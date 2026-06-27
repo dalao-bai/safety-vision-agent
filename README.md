@@ -63,7 +63,7 @@ VLM 单次输出示例（一个隐患对象）：
 
 采用**方案：识别确定化 + 问答工具循环**。
 
-![系统架构图](docs/architecture.svg)
+![系统架构图](docs/architecture.png)
 
 <details>
 <summary>Mermaid 源码（可编辑，GitHub 直接渲染成图）</summary>
