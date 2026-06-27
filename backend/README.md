@@ -25,7 +25,7 @@ cd backend && uvicorn app.main:app --reload --port 8000
 - `POST /sessions` → `{session_id}`
 - `POST /sessions/{id}/images`（multipart 字段 `file`）→ 触发识别，返回隐患列表 + 主动确认问句
 - `POST /sessions/{id}/messages` `{ "text": "..." }` → 多轮问答 / 确认 / 纠错
-- `POST /sessions/{id}/report` → 生成 Markdown 报告；`GET /sessions/{id}/report/download` 下载
+- `POST /sessions/{id}/report` → 生成 Word（.docx）报告；`GET /sessions/{id}/report/download` 下载
 - `GET /sessions/{id}` → 会话消息；`GET /health`
 
 ## 纠错数据流（人在回路）

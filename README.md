@@ -61,7 +61,7 @@ VLM 单次输出示例（一个隐患对象）：
 
 ## 2. 系统架构
 
-采用**方案 ：识别确定化 + 问答工具循环**。
+采用**方案：识别确定化 + 问答工具循环**。
 
 ![系统架构图](docs/architecture.svg)
 
@@ -301,7 +301,7 @@ runtime/pipeline_intake/
 
 系统采用**双重 grounding**，两者互补：
 
-- **向量 RAG（`search_standards`）** —— 对标准 OCR 文档做语义检索 + 增强生成（教科书式 RAG）。用 chromadb 建索引，embeddings 走 OpenAI 兼容 `/embeddings`；检索按标题切块，返回条文片段 + 文件/章节出处。负责提供**标准原文佐证**。
+- **混合 RAG（`search_standards`）** —— 对标准 OCR 文档做**向量检索 + BM25** 双路召回，经 RRF 融合后可选 **cross-encoder reranker**（`BAAI/bge-reranker-base`）精排，最终返回 `RETRIEVAL_FINAL_K` 条条文片段 + 文件/章节出处。分块策略：按标题切块，超长节段用滑窗（`CHUNK_MAX_CHARS=800`，`CHUNK_OVERLAP_CHARS=100`）细分，保证单块不超限。负责提供**标准原文佐证**。
 - **结构化 grounding（`query_kg`）** —— 按 `object_id`/`hazard_type_id` 直接查 KG 实体，精确、无幻觉（structured retrieval / 轻量 GraphRAG）。负责提供**确定的对象-隐患-规则映射与整改条件**。
 
 向量库不可用时降级为 KG-only 作答。首次运行前需构建索引：
@@ -339,11 +339,19 @@ cd backend && python scripts/build_standards_index.py
 | `AGENT_MODEL` | 对话/工具循环模型 |
 | `VLM_MODEL` | 本地 vLLM 的微调视觉模型 |
 | `VLM_API_BASE_URL` / `VLM_API_KEY` | VLM 独立 endpoint；未设时**回退**共享配置 |
-| `EMBEDDING_MODEL` / `CHROMA_DIR` | 向量 RAG |
+| `EMBEDDING_MODEL` / `CHROMA_DIR` | 向量 RAG 模型与索引目录 |
+| `EMBEDDING_API_BASE_URL` / `EMBEDDING_API_KEY` | embedding 独立 endpoint；未设时复用共享配置 |
+| `CHUNK_MAX_CHARS` / `CHUNK_OVERLAP_CHARS` | RAG 分块大小（默认 800）与滑窗重叠字符数（默认 100） |
+| `RETRIEVAL_TOP_K_DENSE` / `RETRIEVAL_TOP_K_BM25` | 向量召回与 BM25 召回数量（默认各 20） |
+| `RETRIEVAL_RRF_K` / `RETRIEVAL_FINAL_K` | RRF 融合参数（默认 60）与最终返回条数（默认 5） |
+| `RERANKER_MODEL` / `RERANKER_ENABLED` | cross-encoder 重排模型（默认 `BAAI/bge-reranker-base`）及开关 |
 | `DATABASE_PATH` / `UPLOAD_DIR` / `REPORT_DIR` | 运行目录 |
 | `PIPELINE_INTAKE_DIR` | 纠错样本投递目录（默认 `runtime/pipeline_intake`） |
 | `MAX_IMAGE_BYTES` / `MAX_TOOL_ITERATIONS` | 上传上限 / 工具循环上限 |
-| `MAX_VLM_WORKERS` | 批量上传时 VLM 并发线程数（默认 4，按 GPU 显存和 vLLM batch size 调整） |
+| `MAX_VLM_WORKERS` | 批量上传时 VLM 并发线程数（默认 4） |
+| `MAX_CONTEXT_CHARS` | 发给模型前历史消息的字符上限（默认 80000） |
+| `TOOL_LOOP_TIMEOUT_SECONDS` | 单次问答工具循环超时秒数（默认 30） |
+| `VLM_INSTRUCTION_MODE` | VLM 提示词模式：`simple`（默认）/ `full`（微调模型就绪后切换） |
 
 VLM 用 vLLM 本地部署，默认暴露 OpenAI 兼容接口（`/v1/chat/completions`），因此 detector 复用 openai SDK，只是把 base URL 指向本地 vLLM。
 
@@ -369,7 +377,7 @@ uvicorn app.main:app --reload --port 8000
 ## 13. 测试
 
 ```bash
-cd backend && python -m pytest -q     # 104 passed
+cd backend && python -m pytest -q     # 142 passed
 ```
 
 测试策略：
@@ -426,7 +434,7 @@ cd backend && python -m pytest -q     # 104 passed
 
 ## 16. 不在本轮范围
 
-- 前端 UI（后续迭代；本轮为后端 API）。
+- 前端完整 UI（`frontend/index.html` 已有初始页，完整交互待后续迭代）。
 - 鉴权 / 多用户隔离（已留接口位，工具层已做同会话校验）。
 - 区域复查 / 裁剪复检。
 - Agent 直接运行流水线或写入母数据库。
@@ -434,6 +442,3 @@ cd backend && python -m pytest -q     # 104 passed
 
 ---
 
-> 设计与实现细节：
-> - Agent 核心：`docs/superpowers/specs/2026-06-22-foe-hazard-qa-agent-design.md`（设计文档）、`docs/superpowers/plans/2026-06-22-foe-hazard-qa-agent.md`（实现计划）
-> - 批量上传：`docs/batch-upload-design.md`（设计文档）、`docs/superpowers/plans/2026-06-24-batch-upload.md`（实现计划）
