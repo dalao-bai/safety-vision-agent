@@ -40,13 +40,6 @@ TOOL_SCHEMAS = [
             "reply": {"type": "string", "description": "向用户显示的完整回复"},
         }, "required": ["reply"]}}},
     {"type": "function", "function": {
-        "name": "query_kg",
-        "description": "查询知识图谱中防护对象或隐患类型的定义、检查范围、合格条件(整改依据)、规则块与标准出处。",
-        "parameters": {"type": "object", "properties": {
-            "object_id": {"type": "string", "description": "防护对象 id,如 foundation_pit_edge_protection"},
-            "hazard_type_id": {"type": "string", "description": "隐患类型 id,如 missing_protection"},
-        }}}},
-    {"type": "function", "function": {
         "name": "search_standards",
         "description": "在 JGJ 标准原文(向量库)中语义检索相关条文片段,返回原文与出处。",
         "parameters": {"type": "object", "properties": {
@@ -107,7 +100,7 @@ _REQUIRED_PARAMS: dict[str, list[str]] = {
 }
 
 # Read-only tools whose results are stable within a session — safe to cache cross-turn.
-_CACHEABLE_TOOLS: frozenset[str] = frozenset({"query_kg", "search_standards", "query_statistics"})
+_CACHEABLE_TOOLS: frozenset[str] = frozenset({"search_standards", "query_statistics"})
 
 
 class ToolGuard:
@@ -141,8 +134,6 @@ class ToolGuard:
 
 
 _MAX_TEXT = 100    # 聚合查询中长文本字段的截断长度（字符）
-_MAX_RULE_BLOCKS = 5   # query_kg 最多返回的规则块数
-_MAX_RULE_TEXT = 200   # 规则块 rule_text 的截断长度
 
 
 def _trunc(s: str, n: int = _MAX_TEXT) -> str:
@@ -161,27 +152,6 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str
     """按工具名路由调用并返回结果字典。"""
     if name == "finish":
         return {"done": True, "reply": args.get("reply", "")}
-    if name == "query_kg":
-        oid = args.get("object_id")
-        hid = args.get("hazard_type_id")
-        if not oid and not hid:
-            return {"error": "at least one of object_id or hazard_type_id is required"}
-        out: dict[str, Any] = {}
-        if oid:
-            obj = ctx.kg.get_object(oid) or {}
-            all_blocks = ctx.kg.rule_blocks_for(oid, hid)
-            blocks = [{**b, "rule_text": _trunc(b["rule_text"], _MAX_RULE_TEXT)}
-                      for b in all_blocks[:_MAX_RULE_BLOCKS]]
-            out = {"object_id": oid, "name": obj.get("name", ""),
-                   "definition": obj.get("definition", ""),
-                   "inspection_scope": obj.get("inspection_scope", []),
-                   "qualified_conditions": obj.get("qualified_conditions", []),
-                   "remediation": ctx.kg.remediation_for(oid),
-                   "rule_blocks": blocks,
-                   "rule_blocks_total": len(all_blocks)}
-        if hid:
-            out["hazard_type"] = ctx.kg.get_hazard_type(hid) or {}
-        return out
     if name == "search_standards":
         hits = ctx.standards.search(args["query"], top_k=int(args.get("top_k", 3)))
         return {"hits": hits}
@@ -228,8 +198,7 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str
             session_id=ctx.session_id, hazards=hazards, report_dir=ctx.report_dir,
             object_name_for=lambda oid: (ctx.kg.get_object(oid) or {}).get("name", oid),
             hazard_name_for=lambda hid: (ctx.kg.get_hazard_type(hid) or {}).get("name", hid or ""),
-            remediation_for=ctx.kg.remediation_for,
-            rule_blocks_for=ctx.kg.rule_blocks_for)
+            remediation_for=ctx.kg.remediation_for)
         return {"report_path": path}
     if name == "confirm_hazards":
         img_id = int(args["image_id"])
