@@ -142,7 +142,7 @@ Agent 每次调用 LLM 时，system prompt 是什么。
 - `_trim_convo` 的截断策略是什么？保底保留几条？
 - 跨轮缓存 `_session_cross_caches` 存在哪里，生命周期是什么？
 
-> loop_outcome 各终态的含义见 [flow_diagrams.md 功能二](flow_diagrams.md#功能二用户发消息--agent-循环)
+> loop_outcome 各终态的含义见 [flow_diagrams.md 功能二](flow_diagrams.md#功能二用户发消息--agent-循环) | 上下文压缩与记忆机制完整设计见 [context_and_memory.md](context_and_memory.md)
 
 ---
 
