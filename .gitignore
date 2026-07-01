@@ -25,3 +25,6 @@ runtime/
 
 # CodeGraph index (auto-generated)
 .codegraph/
+
+# Internal docs (not for version control)
+docs/*.md
