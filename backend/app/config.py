@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     tool_loop_timeout_seconds: int = 30
     # "simple" 先跑通；"full" 启用完整飞轮字段（微调模型就绪后切换）
     vlm_instruction_mode: str = "simple"
+    # LLM 原始调用日志（每 session 一个 JSONL），空字符串则禁用
+    agent_debug_dir: str = "runtime/debug"
 
     @model_validator(mode="after")
     def _fill_vlm(self) -> "Settings":

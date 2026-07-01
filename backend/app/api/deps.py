@@ -74,4 +74,5 @@ def get_orchestrator(
     return Orchestrator(db=db, agent_client=agent_client, agent_model=s.agent_model,
                         ctx_factory=_ctx, max_iterations=s.max_tool_iterations,
                         max_context_chars=s.max_context_chars,
-                        timeout_seconds=s.tool_loop_timeout_seconds)
+                        timeout_seconds=s.tool_loop_timeout_seconds,
+                        debug_dir=s.agent_debug_dir)

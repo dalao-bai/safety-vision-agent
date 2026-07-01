@@ -34,17 +34,11 @@ def _owns_image(ctx: "ToolContext", img_id: int) -> bool:
 
 TOOL_SCHEMAS = [
     {"type": "function", "function": {
-        "name": "finish",
-        "description": "完成所有工具查询后调用，提交最终回复。reply 填写向用户展示的完整内容。",
-        "parameters": {"type": "object", "properties": {
-            "reply": {"type": "string", "description": "向用户显示的完整回复"},
-        }, "required": ["reply"]}}},
-    {"type": "function", "function": {
         "name": "search_standards",
-        "description": "在 JGJ 标准原文(向量库)中语义检索相关条文片段,返回原文与出处。",
+        "description": "在 JGJ 标准原文(向量库)中语义检索相关条文片段,返回原文与出处。用于回答标准要求、整改依据类问题。",
         "parameters": {"type": "object", "properties": {
-            "query": {"type": "string"},
-            "top_k": {"type": "integer", "default": 3},
+            "query": {"type": "string", "description": "中文检索词或问题，如「基坑临边防护栏杆高度要求」"},
+            "top_k": {"type": "integer", "default": 3, "description": "返回条文数，默认 3"},
         }, "required": ["query"]}}},
     {"type": "function", "function": {
         "name": "get_session_hazards",
@@ -64,21 +58,22 @@ TOOL_SCHEMAS = [
         }, "required": ["image_id", "note"]}}},
     {"type": "function", "function": {
         "name": "export_report",
-        "description": "把本会话已确认隐患导出为 Markdown 报告,返回下载路径。",
+        "description": "把本会话已确认（confirmed）隐患导出为 .docx 巡查报告，返回下载路径。仅包含已确认隐患；若用户尚未确认任何图片，应先提示确认再导出。",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "confirm_hazards",
         "description": "当用户确认某张图的识别结果正确时调用,将该图隐患标记为已确认(确认后才会纳入导出报告)。",
         "parameters": {"type": "object", "properties": {
-            "image_id": {"type": "integer"}}, "required": ["image_id"]}}},
+            "image_id": {"type": "integer", "description": "要确认的图片 id，来自上传图片时返回的 image_id"}},
+            "required": ["image_id"]}}},
     {"type": "function", "function": {
         "name": "confirm_hazards_batch",
-        "description": "批量确认多张图片的识别结果。image_ids 传具体列表，或 confirm_all=true 确认本会话全部待确认图片。",
+        "description": "批量确认多张图片的识别结果。confirm_all=true 时确认本会话全部待确认图片（优先于 image_ids）；否则按 image_ids 列表确认指定图片，二者不要同时传。",
         "parameters": {"type": "object", "properties": {
             "image_ids": {"type": "array", "items": {"type": "integer"},
-                          "description": "要确认的图片 id 列表"},
+                          "description": "要确认的图片 id 列表，confirm_all 为 true 时忽略此字段"},
             "confirm_all": {"type": "boolean",
-                            "description": "true 时确认本会话全部待确认图片"},
+                            "description": "true 时确认本会话全部待确认图片，优先于 image_ids"},
         }}}},
     {"type": "function", "function": {
         "name": "query_statistics",
@@ -150,8 +145,6 @@ def _hazard_brief(h, full: bool = False) -> dict:
 
 def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     """按工具名路由调用并返回结果字典。"""
-    if name == "finish":
-        return {"done": True, "reply": args.get("reply", "")}
     if name == "search_standards":
         hits = ctx.standards.search(args["query"], top_k=int(args.get("top_k", 3)))
         return {"hits": hits}

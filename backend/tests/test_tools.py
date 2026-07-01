@@ -23,7 +23,7 @@ def _ctx(tmp_path, kg_path):
 
 def test_schemas_cover_all_tools():
     names = {t["function"]["name"] for t in TOOL_SCHEMAS}
-    assert names == {"finish", "search_standards", "get_session_hazards",
+    assert names == {"search_standards", "get_session_hazards",
                      "submit_correction", "export_report", "confirm_hazards",
                      "query_statistics", "confirm_hazards_batch"}
 

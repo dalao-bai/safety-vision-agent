@@ -94,7 +94,7 @@ VLM 单次输出示例（一个隐患对象）：
 - **用户描述错误** → Agent 调 `submit_correction(image_id, note)`：纠错落库 + 经 `intake.deposit` **沉入流水线待处理队列**，该图置 `corrected_submitted`，回复「已记录并入队」。
 
 ### C. 问答轮（标准溯源 / 整改）
-- Agent 用 `search_standards` / `get_session_hazards` 取证后作答，引用标准原文；整改建议由报告生成时从 KG 的 `qualified_conditions`（合格条件）提取。
+- Agent 用 `search_standards` / `get_session_hazards` 取证后作答，引用标准原文；整改建议通过 `search_standards` 检索相关条文后给出，导出报告时从 KG 的 `qualified_conditions`（合格条件）补充整改条目。
 
 ---
 
@@ -140,9 +140,9 @@ VLM 的输出字段与 KG 实体**完全对齐**（`related_object`→object_id�
 | `search_standards(query, top_k)` | 向量检索 JGJ 标准原文片段，返回条文 + 文件/章节出处 |
 | `get_session_hazards(image_id?, status_filter?, limit?)` | 召回本会话已识别隐患。传 `image_id` 时返回该图完整字段；传 `status_filter`（`confirmed_hazard`/`uncertain`/`safe`）时只返回该状态；不传时返回会话级摘要（长文本截断至 100 字，最多 `limit` 条，默认 20，附 `total`/`returned`） |
 | `confirm_hazards(image_id)` | 用户确认单张图正确时把该图隐患置 `confirmed`（报告导出前置条件） |
-| `confirm_hazards_batch(image_ids?, confirm_all?)` | 批量确认多张图片的识别结果。传 `image_ids=[...]` 确认指定图；传 `confirm_all=true` 确认本会话全部待确认图片（一次工具调用解决，不受 `MAX_TOOL_ITERATIONS` 累加限制） |
+| `confirm_hazards_batch(image_ids?, confirm_all?)` | 批量确认多张图片的识别结果。传 `image_ids=[...]` 确认指定图；传 `confirm_all=true` 确认本会话全部待确认图片（`confirm_all` 优先于 `image_ids`，二者不要同时传） |
 | `submit_correction(image_id, note)` | 记录纠错 + 沉入流水线待处理队列 |
-| `export_report(scope?)` | 由会话内已确认隐患生成 Word（.docx）报告，返回下载路径 |
+| `export_report()` | 由会话内已确认（confirmed）隐患生成 Word（.docx）报告，返回下载路径；若无已确认隐患应先提示用户确认 |
 | `query_statistics(date_from?, date_to?, hazard_type_id?, object_id?, confirmed_only?)` | 跨会话统计隐患数量与分类明细，支持按时间段 / 类型 / 对象过滤 |
 
 所有按 `image_id` 操作的工具都会校验该图属于当前会话，拒绝跨会话访问。
@@ -233,8 +233,7 @@ cd backend && python scripts/build_standards_index.py
 | `POST` | `/sessions/{id}/images` | 单张上传（multipart `file`）→ 触发识别，返回隐患列表 + 确认问句 |
 | `POST` | `/sessions/{id}/images/batch` | 批量上传（multipart `files[]`）→ 并发识别，返回 `{batch_id, total, succeeded, failed, summary, failed_files, assistant_message}` |
 | `POST` | `/sessions/{id}/messages` | 多轮问答 / 确认 / 纠错，body `{"text": "..."}` → `{reply}` |
-| `POST` | `/sessions/{id}/report` | 生成 Word（.docx）报告 → `{report_path}` |
-| `GET`  | `/sessions/{id}/report/download` | 下载报告文件 |
+| `GET`  | `/sessions/{id}/report/download` | 下载报告文件（需先通过 `export_report` 工具生成） |
 | `GET`  | `/health` | 健康检查 |
 
 识别失败（VLM 输出非法）返回 `422`；图片类型不合法 `400`；超出大小上限 `413`；会话不存在 `404`。批量上传全部文件无效时返回 `422`；部分失败时仍返回 `200`，失败原因在 `failed_files` 中。

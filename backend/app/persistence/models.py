@@ -72,5 +72,5 @@ class ToolTrace:
     result_summary: str # 工具返回值的截断摘要（最多200字符），用于事后排查，不存完整结果避免数据库膨胀。
     duration_ms: float
     outcome: str        # "ok" | "error" | "guard_blocked"
-    loop_outcome: str   # "finish" | "no_tool_calls" | "timeout" | "max_iter" | "pending"
+    loop_outcome: str   # "no_tool_calls" | "timeout" | "max_iter" | "pending"
     created_at: str
