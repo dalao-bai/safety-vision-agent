@@ -390,20 +390,6 @@ def test_tool_traces_guard_blocked_recorded(tmp_path, kg_path):
     assert "guard_blocked" in outcomes
 
 
-def test_tool_traces_finish_outcome(tmp_path, kg_path):
-    script = [
-        ("", [("finish", {"reply": "全部完成"})]),
-    ]
-    orch, db, _ = _orch(tmp_path, kg_path, script)
-    sid = db.create_session()
-    reply = orch.handle_message(sid, "完成了吗?")
-    assert reply == "全部完成"
-
-    traces = db.get_tool_traces(sid)
-    assert len(traces) == 1
-    assert traces[0].loop_outcome == "finish"
-
-
 def test_cross_turn_cache_via_loop_state(tmp_path, kg_path):
     """Cross-turn cache in LoopState blocks repeated cacheable calls across turns."""
     from app.agent.orchestrator import _session_cross_caches

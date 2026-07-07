@@ -11,9 +11,13 @@ from typing import Any
 from app.kg.store import KGStore
 
 # 完整格式：微调模型就绪后启用（含 rule_basis / evidence_sufficiency / reasoning_chain 等飞轮字段）
-_VLM_INSTRUCTION_FULL = (
-    "你是四口五临边安全隐患识别模型。仔细看图,输出整图结论与隐患列表的 JSON。"
-)
+_VLM_INSTRUCTION_FULL = """\
+你是四口五临边安全隐患识别模型。仔细看图，以 JSON 输出隐患列表，格式如下：
+{"scene":"四口五临边","hazards":[{"object_id":"<防护对象id>","object_name":"<防护对象名称>","hazard_type_id":"<隐患类型id或null>","status":"confirmed_hazard|uncertain|safe","visual_evidence":"<一句话视觉依据>","rule_basis":"<规则依据>","evidence_sufficiency":"<证据充分性说明>","uncertainty_reason":"<不确定原因，status为uncertain时填写>","reasoning_chain":[{"step":"<推理步骤>","conclusion":"<结论>"}],"object_bbox":[x1,y1,x2,y2]}]}
+object_id 必须从以下 9 个中选一个：stair_opening_protection / elevator_shaft_protection / reserved_opening_protection / passage_entrance_protection / balcony_edge_protection / roof_edge_protection / floor_edge_protection / foundation_pit_edge_protection / ramp_edge_protection。
+hazard_type_id 取值：missing_protection / discontinuous_protection / temporary_substitute / unfixed_or_weak_protection / door_open_or_missing / access_or_obstruction_issue，无法判断填 null。
+只输出 JSON，不要其他文字。\
+"""
 
 # 简化格式：先跑通用，微调数据只需输出这几个字段
 # {
@@ -32,7 +36,7 @@ _VLM_INSTRUCTION_SIMPLE = """\
 你是四口五临边安全隐患识别模型。仔细看图，以 JSON 输出隐患列表，格式如下：
 {"scene":"四口五临边","hazards":[{"related_object":"<防护对象名称>","hazard_type_id":"<隐患类型id或null>","status":"confirmed_hazard|uncertain|safe","visual_evidence":"<一句话视觉依据>","object_bbox":[x1,y1,x2,y2]}]}
 related_object 必须从以下 9 个名称中选一个，不得自行创造：楼梯口防护、电梯井口防护、预留洞口防护、通道口防护、阳台临边防护、屋面临边防护、楼层临边防护、基坑临边防护、跑道（斜道）临边防护。
-hazard_type_id 取值：missing_protection / discontinuous_protection / temporary_substitute / unstable_fixation / missing_protective_door / passage_abnormal，无法判断填 null。
+hazard_type_id 取值：missing_protection / discontinuous_protection / temporary_substitute / unfixed_or_weak_protection / door_open_or_missing / access_or_obstruction_issue，无法判断填 null。
 只输出 JSON，不要其他文字。\
 """
 

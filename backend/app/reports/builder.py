@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Callable
 
 from docx import Document
-from docx.shared import Pt
 
 from app.persistence.models import Hazard
 
@@ -17,7 +16,6 @@ def build_docx_report(
     object_name_for: Callable[[str], str],
     hazard_name_for: Callable[[str | None], str],
     remediation_for: Callable[[str], list[dict[str, str]]],
-    rule_blocks_for: Callable[[str, str | None], list[dict]] | None = None,
 ) -> str:
     """生成会话已确认隐患的.docx巡查报告，返回文件路径。"""
     out_dir = Path(report_dir)
@@ -39,15 +37,8 @@ def build_docx_report(
                 f"{i}. {object_name_for(h.object_id)} — {hazard_name_for(h.hazard_type_id)}",
                 level=1,
             )
-            # 若 VLM 未返回 rule_basis，从 KG rule_blocks 补全
+            # 若 VLM 未返回 rule_basis，直接显示"暂无"
             rule_basis = h.rule_basis
-            if not rule_basis and rule_blocks_for:
-                blocks = rule_blocks_for(h.object_id, h.hazard_type_id)
-                if blocks:
-                    rule_basis = "；".join(
-                        f"{b['rule_text']}（{b['source']}）" if b.get("source") else b["rule_text"]
-                        for b in blocks if b.get("rule_text")
-                    )
 
             info = doc.add_paragraph()
             info.add_run(f"状态：{h.status}\n")

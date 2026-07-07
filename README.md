@@ -94,7 +94,7 @@ VLM 单次输出示例（一个隐患对象）：
 - **用户描述错误** → Agent 调 `submit_correction(image_id, note)`：纠错落库 + 经 `intake.deposit` **沉入流水线待处理队列**，该图置 `corrected_submitted`，回复「已记录并入队」。
 
 ### C. 问答轮（标准溯源 / 整改）
-- Agent 用 `query_kg` / `search_standards` / `get_session_hazards` 取证后作答，引用 KG 与标准原文；整改建议由 KG 的 `qualified_conditions`（合格条件）或 `rule_blocks`（规则块兜底）派生。
+- Agent 用 `search_standards` / `get_session_hazards` 取证后作答，引用标准原文；整改建议通过 `search_standards` 检索相关条文后给出，导出报告时从 KG 的 `qualified_conditions`（合格条件）补充整改条目。
 
 ---
 
@@ -104,12 +104,12 @@ VLM 单次输出示例（一个隐患对象）：
 |---|---|---|
 | `app/config.py` | 读 `.env`（pydantic-settings） | VLM endpoint 未设时回退共享 OpenAI 配置 |
 | `app/vlm/detector.py` | 调本地 vLLM、容错解析输出 | 输出 `DetectionResult`；名→id 映射；非法 JSON 抛 `DetectionError` |
-| `app/kg/store.py` | 载入知识图谱 + 规则块 | `get_object` / `get_hazard_type` / `remediation_for` / `rule_blocks_for` |
+| `app/kg/store.py` | 载入知识图谱 | `get_object` / `get_hazard_type` / `remediation_for` / `object_id_for_name` |
 | `app/retrieval/standards.py` | 标准 OCR 向量库（RAG） | `build(roots)` 建索引；`search(query, top_k)` 返回片段+出处 |
 | `app/correction/intake.py` | 纠错样本写入流水线队列 | `deposit(image, result, note)`；只写文件、不跑流水线、不写母库 |
 | `app/reports/builder.py` | 生成 Word（.docx）报告 | 由会话内 `confirmed` 隐患生成；标题/段落/整改条目结构化排版 |
 | `app/persistence/db.py` | SQLite 持久化 | 线程锁保护；会话/消息/图片/隐患/纠错读写 |
-| `app/agent/tools.py` | 8 个工具的 schema、分发与调用守卫 | 跨会话 `image_id` 鉴权（`_owns_image`）；`ToolGuard` 负责工具名校验、必填参数校验、同轮去重 |
+| `app/agent/tools.py` | 7 个工具的 schema、分发与调用守卫 | 跨会话 `image_id` 鉴权（`_owns_image`）；`ToolGuard` 负责工具名校验、必填参数校验、同轮去重 |
 | `app/agent/prompts.py` | 系统提示词 + 识别展示模板 | 指导确认/纠错/作答流程 |
 | `app/agent/orchestrator.py` | 一轮调度 + 手写工具循环 | 识别确定化；`system` 上下文统一前置；循环上限兜底；单张/批量已处理图的识别摘要自动压缩；每轮实例化 `ToolGuard` 拦截非法/重复调用 |
 | `app/api/*` | FastAPI 路由与依赖装配 | sessions / images / messages / reports |
@@ -124,7 +124,7 @@ VLM 单次输出示例（一个隐患对象）：
   - 9 类防护对象（每个含 `definition`、`inspection_scope`、`qualified_conditions` 合格条件、标准 `source`）；
   - 6 类隐患类型（防护缺失、防护不连续、临时替代、固定不牢、防护门缺失、通行异常）；
   - 3 种状态（明确隐患 / 未见明显隐患 / 证据不足）。
-- **`four_openings_edges_rule_blocks.json`** —— 65 条规则块，按对象 + 隐患类型组织，含规则原文、视觉线索、标准溯源。用于补充 `qualified_conditions` 为空的对象（如基坑、阳台临边）的整改依据。
+- **`four_openings_edges_rule_blocks.json`** —— 65 条规则块，按对象 + 隐患类型组织，含规则原文、视觉线索、标准溯源。供标注流水线（`annotation_pipeline/`）构建 VLM 训练 prompt 使用。
 - **`标准规范文件/`** —— JGJ 59-2011 / JGJ 80-2016 标准 PDF、MinerU OCR 结果（`*.md`）、结构化评分表。RAG 检索层从这里建向量索引。
 
 VLM 的输出字段与 KG 实体**完全对齐**（`related_object`→object_id、`hazard_type_id`、`status` 等），这是整个系统能溯源的基础。
@@ -137,13 +137,12 @@ VLM 的输出字段与 KG 实体**完全对齐**（`related_object`→object_id�
 
 | 工具 | 作用 |
 |---|---|
-| `query_kg(object_id?, hazard_type_id?)` | 查 KG 实体：定义、检查范围、`qualified_conditions`（整改依据）、`rule_blocks`（规则块兜底，最多 5 条，超出部分由 `rule_blocks_total` 标注）、隐患类型、标准出处 |
 | `search_standards(query, top_k)` | 向量检索 JGJ 标准原文片段，返回条文 + 文件/章节出处 |
 | `get_session_hazards(image_id?, status_filter?, limit?)` | 召回本会话已识别隐患。传 `image_id` 时返回该图完整字段；传 `status_filter`（`confirmed_hazard`/`uncertain`/`safe`）时只返回该状态；不传时返回会话级摘要（长文本截断至 100 字，最多 `limit` 条，默认 20，附 `total`/`returned`） |
 | `confirm_hazards(image_id)` | 用户确认单张图正确时把该图隐患置 `confirmed`（报告导出前置条件） |
-| `confirm_hazards_batch(image_ids?, confirm_all?)` | 批量确认多张图片的识别结果。传 `image_ids=[...]` 确认指定图；传 `confirm_all=true` 确认本会话全部待确认图片（一次工具调用解决，不受 `MAX_TOOL_ITERATIONS` 累加限制） |
+| `confirm_hazards_batch(image_ids?, confirm_all?)` | 批量确认多张图片的识别结果。传 `image_ids=[...]` 确认指定图；传 `confirm_all=true` 确认本会话全部待确认图片（`confirm_all` 优先于 `image_ids`，二者不要同时传） |
 | `submit_correction(image_id, note)` | 记录纠错 + 沉入流水线待处理队列 |
-| `export_report(scope?)` | 由会话内已确认隐患生成 Word（.docx）报告，返回下载路径 |
+| `export_report()` | 由会话内已确认（confirmed）隐患生成 Word（.docx）报告，返回下载路径；若无已确认隐患应先提示用户确认 |
 | `query_statistics(date_from?, date_to?, hazard_type_id?, object_id?, confirmed_only?)` | 跨会话统计隐患数量与分类明细，支持按时间段 / 类型 / 对象过滤 |
 
 所有按 `image_id` 操作的工具都会校验该图属于当前会话，拒绝跨会话访问。
@@ -205,9 +204,6 @@ runtime/pipeline_intake/
 | 工具 | 控制方式 |
 |---|---|
 | `get_session_hazards`（无 image_id） | `visual_evidence`/`rule_basis` 截断至 100 字并加 `"…"`，最多返回 `limit` 条（上限 50），附 `total`/`returned` 让模型感知被截 |
-| `get_session_hazards`（有 image_id） | 精确查询，字段完整返回，无截断 |
-| `query_kg` | `rule_blocks` 最多 5 条，`rule_text` 截断至 200 字，附 `rule_blocks_total` 标注实际总数 |
-| `search_standards` | 由调用方 `top_k` 参数控制（默认 3） |
 | `query_statistics` | `breakdown` 由 `top_n` 控制（默认 10） |
 
 所有截断均有显式标记（`"…"` 后缀或 `total` 字段），模型可据此判断是否需要缩小查询范围。
@@ -219,9 +215,8 @@ runtime/pipeline_intake/
 系统采用**双重 grounding**，两者互补：
 
 - **混合 RAG（`search_standards`）** —— 对标准 OCR 文档做**向量检索 + BM25** 双路召回，经 RRF 融合后可选 **cross-encoder reranker**（`BAAI/bge-reranker-base`）精排，最终返回 `RETRIEVAL_FINAL_K` 条条文片段 + 文件/章节出处。分块策略：按标题切块，超长节段用滑窗（`CHUNK_MAX_CHARS=800`，`CHUNK_OVERLAP_CHARS=100`）细分，保证单块不超限。负责提供**标准原文佐证**。
-- **结构化 grounding（`query_kg`）** —— 按 `object_id`/`hazard_type_id` 直接查 KG 实体，精确、无幻觉（structured retrieval / 轻量 GraphRAG）。负责提供**确定的对象-隐患-规则映射与整改条件**。
 
-向量库不可用时降级为 KG-only 作答。首次运行前需构建索引：
+向量库不可用时降级为空结果返回（BM25 兜底）。首次运行前需构建索引：
 
 ```bash
 cd backend && python scripts/build_standards_index.py
@@ -238,8 +233,7 @@ cd backend && python scripts/build_standards_index.py
 | `POST` | `/sessions/{id}/images` | 单张上传（multipart `file`）→ 触发识别，返回隐患列表 + 确认问句 |
 | `POST` | `/sessions/{id}/images/batch` | 批量上传（multipart `files[]`）→ 并发识别，返回 `{batch_id, total, succeeded, failed, summary, failed_files, assistant_message}` |
 | `POST` | `/sessions/{id}/messages` | 多轮问答 / 确认 / 纠错，body `{"text": "..."}` → `{reply}` |
-| `POST` | `/sessions/{id}/report` | 生成 Word（.docx）报告 → `{report_path}` |
-| `GET`  | `/sessions/{id}/report/download` | 下载报告文件 |
+| `GET`  | `/sessions/{id}/report/download` | 下载报告文件（需先通过 `export_report` 工具生成） |
 | `GET`  | `/health` | 健康检查 |
 
 识别失败（VLM 输出非法）返回 `422`；图片类型不合法 `400`；超出大小上限 `413`；会话不存在 `404`。批量上传全部文件无效时返回 `422`；部分失败时仍返回 `200`，失败原因在 `failed_files` 中。
@@ -314,7 +308,7 @@ cd backend && python -m pytest -q     # 142 passed
 | 识别确定化，不做 LLM 工具 | 识别是事实基础，不该交给 LLM 临场决定是否调用；做成上传即触发保证每图都有稳定结构化资产 |
 | 纯 Python 手写工具循环，不用 LangChain | 工具集小、流程确定，框架反而隐藏控制流、增加调试难度与版本风险 |
 | 纠错解耦投递，不跑流水线/不写母库 | 复核入库是流水线既有的人工环节；Agent 只投递原料，职责清晰、风险可控 |
-| `remediation_for` 诚实返回 qualified_conditions | 基坑/阳台对象的合格条件为空，改由 `rule_blocks` 兜底，避免对核心案例给空整改 |
+| 报告 `rule_basis` 缺失时显示"暂无"，不做 KG 补全 | `rule_blocks.rule_text` 是视觉判断条件而非标准引用，用它拼接 rule_basis 会引入不准确内容；VLM 微调后将直接输出标准引用 |
 | 双重 grounding（KG + 向量 RAG） | KG 给确定映射、向量 RAG 给原文佐证，互补降低幻觉 |
 | 系统上下文统一前置到首条 system 消息 | 严格 OpenAI/vLLM 端点只允许 system 在 position 0；避免中途 system 被拒 |
 | 持久化补 `uncertainty_reason`/`missing_evidence` | 纠错飞轮的关键信号，尤其是对「证据不足」类样本 |

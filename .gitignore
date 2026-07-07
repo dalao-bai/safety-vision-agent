@@ -22,3 +22,9 @@ runtime/
 .DS_Store
 .idea/
 .vscode/
+
+# CodeGraph index (auto-generated)
+.codegraph/
+
+# Internal docs (not for version control)
+docs/*.md

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from app.agent.prompts import SYSTEM_PROMPT, render_detection_message
@@ -148,7 +150,8 @@ class Orchestrator:
 
     def __init__(self, db: Database, agent_client: Any, agent_model: str,
                  ctx_factory: Callable[[int], ToolContext], max_iterations: int = 5,
-                 max_context_chars: int = 80_000, timeout_seconds: int = 30):
+                 max_context_chars: int = 80_000, timeout_seconds: int = 30,
+                 debug_dir: str = ""):
         self._db = db
         self._client = agent_client
         self._model = agent_model
@@ -156,6 +159,7 @@ class Orchestrator:
         self._max_iter = max_iterations
         self._max_context_chars = max_context_chars
         self._timeout_seconds = timeout_seconds
+        self._debug_dir = debug_dir
 
     def handle_message(self, session_id: str, user_text: str) -> str:
         msg_id = self._db.add_message(session_id, "user", user_text)
@@ -176,9 +180,15 @@ class Orchestrator:
                 state.outcome = "timeout"
                 break
 
+            self._write_debug(session_id, {"event": "llm_request",
+                                           "iteration": state.iteration,
+                                           "messages": state.messages})
             resp = self._client.chat.completions.create(
                 model=self._model, messages=state.messages, tools=TOOL_SCHEMAS, temperature=0)
             if not resp.choices:
+                self._write_debug(session_id, {"event": "llm_response",
+                                               "iteration": state.iteration,
+                                               "choices": []})
                 fallback = "模型未返回任何结果,请稍后再试。"
                 self._db.add_message(session_id, "assistant", fallback)
                 state.outcome = "no_tool_calls"
@@ -186,6 +196,14 @@ class Orchestrator:
                 return fallback
             msg = resp.choices[0].message
             tool_calls = getattr(msg, "tool_calls", None)
+            self._write_debug(session_id, {
+                "event": "llm_response",
+                "iteration": state.iteration,
+                "content": msg.content,
+                "tool_calls": [{"id": tc.id, "name": tc.function.name,
+                                "arguments": tc.function.arguments}
+                               for tc in tool_calls] if tool_calls else None,
+            })
             if not tool_calls:
                 reply = msg.content or ""
                 self._db.add_message(session_id, "assistant", reply)
@@ -212,14 +230,6 @@ class Orchestrator:
                         tool_result = {"error": err}
                     else:
                         tool_result = dispatch_tool(tc.function.name, args, ctx)
-                        # finish 工具：立即终止
-                        if tc.function.name == "finish" and tool_result.get("done"):
-                            reply = tool_result.get("reply", "")
-                            self._db.add_message(session_id, "assistant", reply)
-                            state.outcome = "finish"
-                            self._record_tool(state, tc.function.name, args, tool_result, tc_outcome, t0)
-                            self._flush_traces(state)
-                            return reply
                         # 外部校验：confirm 类工具执行后验证 DB 状态
                         if tc.function.name in ("confirm_hazards", "confirm_hazards_batch") and tool_result.get("ok"):
                             ids = ([args.get("image_id")] if tc.function.name == "confirm_hazards"
@@ -230,6 +240,16 @@ class Orchestrator:
                 except Exception as exc:
                     tc_outcome = "error"
                     tool_result = {"error": str(exc)}
+                duration_ms = (time.monotonic() - t0) * 1000
+                self._write_debug(session_id, {
+                    "event": "tool_result",
+                    "iteration": state.iteration,
+                    "tool_name": tc.function.name,
+                    "args": args,
+                    "outcome": tc_outcome,
+                    "result": tool_result,
+                    "duration_ms": round(duration_ms, 1),
+                })
                 self._record_tool(state, tc.function.name, args, tool_result, tc_outcome, t0)
                 state.messages.append({"role": "tool", "tool_call_id": tc.id,
                                        "content": json.dumps(tool_result, ensure_ascii=False)})
@@ -264,6 +284,23 @@ class Orchestrator:
 
     def _flush_traces(self, state: LoopState) -> None:
         self._db.flush_tool_traces(state.session_id, state.outcome)
+        self._write_debug(state.session_id, {"event": "loop_end", "outcome": state.outcome})
+
+    def _write_debug(self, session_id: str, entry: dict) -> None:
+        if not self._debug_dir:
+            return
+        try:
+            d = Path(self._debug_dir)
+            d.mkdir(parents=True, exist_ok=True)
+            line = json.dumps(
+                {"ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                 "session_id": session_id, **entry},
+                ensure_ascii=False,
+            )
+            with (d / f"{session_id}.jsonl").open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
 
     def _build_messages(self, session_id: str) -> list[dict[str, Any]]:
         raw = self._db.get_messages(session_id)

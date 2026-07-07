@@ -23,26 +23,9 @@ def _ctx(tmp_path, kg_path):
 
 def test_schemas_cover_all_tools():
     names = {t["function"]["name"] for t in TOOL_SCHEMAS}
-    assert names == {"finish", "query_kg", "search_standards", "get_session_hazards",
+    assert names == {"search_standards", "get_session_hazards",
                      "submit_correction", "export_report", "confirm_hazards",
                      "query_statistics", "confirm_hazards_batch"}
-
-
-def test_query_kg(tmp_path, kg_path):
-    ctx, _ = _ctx(tmp_path, kg_path)
-    out = dispatch_tool("query_kg", {"object_id": "foundation_pit_edge_protection",
-                                     "hazard_type_id": "missing_protection"}, ctx)
-    assert out["name"] == "基坑临边防护"
-    # foundation_pit has empty qualified_conditions, but rule_blocks ground remediation
-    assert out["remediation"] == []
-    assert len(out["rule_blocks"]) >= 1
-    assert out["rule_blocks"][0]["hazard_type_id"] == "missing_protection"
-
-
-def test_query_kg_populated_remediation(tmp_path, kg_path):
-    ctx, _ = _ctx(tmp_path, kg_path)
-    out = dispatch_tool("query_kg", {"object_id": "stair_opening_protection"}, ctx)
-    assert len(out["remediation"]) >= 1
 
 
 def test_search_standards(tmp_path, kg_path):
@@ -188,18 +171,6 @@ def test_get_session_hazards_limit(tmp_path, kg_path):
     out2 = dispatch_tool("get_session_hazards", {"limit": 5}, ctx)
     assert out2["returned"] == 5
 
-
-def test_query_kg_rule_blocks_capped(tmp_path, kg_path):
-    ctx, _ = _ctx(tmp_path, kg_path)
-    out = dispatch_tool("query_kg", {"object_id": "foundation_pit_edge_protection"}, ctx)
-    assert len(out["rule_blocks"]) <= 5
-    assert "rule_blocks_total" in out
-    assert out["rule_blocks_total"] >= len(out["rule_blocks"])
-    for b in out["rule_blocks"]:
-        assert len(b["rule_text"]) <= 201   # 200 chars + ellipsis
-
-
-# --- ToolGuard unit tests ---
 
 def test_guard_unknown_tool():
     g = ToolGuard()
